@@ -53,7 +53,13 @@ async def entrante(request: Request, fondo: BackgroundTasks):
     # 1. ¿Viene de Twilio? La URL debe ser la pública, la que Twilio firmó.
     url = config.URL_PUBLICA or str(request.url)
     if not whatsapp.firma_valida(url, form, request.headers.get("X-Twilio-Signature", "")):
-        log.warning("firma inválida desde %s", request.client.host if request.client else "?")
+        log.warning(
+            "FIRMA INVÁLIDA\n"
+            "  URL_PUBLICA del .env : %s\n"
+            "  URL que vio el server: %s\n"
+            "  Ambas deben ser IGUALES a la que pusiste en Twilio.\n"
+            "  Si acabas de editar el .env, reinicia uvicorn: --reload no recarga el .env.",
+            config.URL_PUBLICA or "(vacía)", request.url)
         return PlainTextResponse("firma inválida", status_code=403)
 
     telefono = whatsapp.normalizar(form.get("From", ""))
