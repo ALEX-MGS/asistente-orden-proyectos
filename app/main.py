@@ -7,10 +7,12 @@ inmediato y mandamos la respuesta real por la API de Twilio.
 """
 import logging
 
-from fastapi import BackgroundTasks, FastAPI, Request
-from fastapi.responses import PlainTextResponse
+from pathlib import Path
 
-from . import agente, config, db, whatsapp
+from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+
+from . import agente, api, config, db, tablero, whatsapp
 
 log = logging.getLogger("asistente")
 app = FastAPI(title="Asistente de obra · Grupo Morales")
@@ -44,6 +46,46 @@ def salud():
     faltan = config.faltantes()
     return {"ok": not faltan, "faltan": faltan,
             "proveedor": config.PROVEEDOR, "modelo": config.MODELO}
+
+
+PANEL = Path(__file__).resolve().parent.parent / "estatico" / "panel.html"
+
+
+def con_token(k: str) -> bool:
+    return not config.TABLERO_TOKEN or k == config.TABLERO_TOKEN
+
+
+@app.get("/panel")
+def panel(k: str = ""):
+    """El panel de siempre, pero leyendo de la base."""
+    if not con_token(k):
+        return PlainTextResponse("No autorizado", status_code=403)
+    return FileResponse(PANEL, media_type="text/html")
+
+
+@app.get("/api/estado")
+def api_estado(k: str = ""):
+    """El estado completo, en la forma que el panel ya espera."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(api.estado())
+    except Exception as e:
+        log.exception("falló /api/estado")
+        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+@app.get("/tablero", response_class=HTMLResponse)
+def ver_tablero(k: str = ""):
+    """Tablero de solo lectura. Se edita por WhatsApp, aquí sólo se mira."""
+    if config.TABLERO_TOKEN and k != config.TABLERO_TOKEN:
+        return HTMLResponse("No autorizado", status_code=403)
+    try:
+        return HTMLResponse(tablero.render(tablero.datos()))
+    except Exception as e:
+        log.exception("falló el tablero")
+        return HTMLResponse(f"No se pudo armar el tablero: {type(e).__name__}",
+                            status_code=500)
 
 
 @app.post("/whatsapp")

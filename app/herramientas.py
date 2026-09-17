@@ -20,7 +20,10 @@ HERRAMIENTAS = [
             "type": "object",
             "properties": {
                 "texto": {"type": "string", "description": "Ej: 'mob 7', 'credenza', 'baño primer nivel'"},
-                "obra": {"type": "string", "description": "Opcional. Ej: 'silver deer', 'bosque real'"},
+                "obra": {"type": "string",
+                         "description": ("Opcional. La obra o el grupo dentro de ella. "
+                                         "Ej: 'silver deer', 'bosque real', "
+                                         "'habitación fátima', 'extras'")},
             },
             "required": ["texto"],
         },
@@ -41,6 +44,37 @@ HERRAMIENTAS = [
                 "hecho": {"type": "boolean", "description": "true palomea, false despalomea. Default true."},
             },
             "required": ["mueble_id", "etapa"],
+        },
+    },
+    {
+        "name": "marcar_terminado",
+        "description": (
+            "Marca o desmarca la palomita de Terminado de un mueble. Es un paso "
+            "APARTE de las cinco etapas: un mueble con las cinco etapas pero sin "
+            "esta palomita va en 83%, no en 100%. Requiere el mueble_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mueble_id": {"type": "string"},
+                "terminado": {"type": "boolean",
+                              "description": "true marca, false desmarca. Default true."},
+            },
+            "required": ["mueble_id"],
+        },
+    },
+    {
+        "name": "reiniciar_mueble",
+        "description": (
+            "Borra TODO el progreso de un mueble de una sola vez: las cinco etapas "
+            "y la palomita de Terminado quedan en cero. Úsala cuando pidan borrar, "
+            "limpiar o reiniciar el progreso de un mueble — NUNCA lo hagas llamando "
+            "actualizar_etapa cinco veces, porque se queda a medias."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"mueble_id": {"type": "string"}},
+            "required": ["mueble_id"],
         },
     },
     {
@@ -125,8 +159,9 @@ HERRAMIENTAS = [
 
 # Las que escriben. Después de una de estas el asistente debe confirmar
 # exactamente lo que quedó anotado.
-ESCRITURA = {"actualizar_etapa", "crear_mueble", "fijar_fecha",
-             "agregar_pendiente", "cerrar_pendiente", "deshacer"}
+ESCRITURA = {"actualizar_etapa", "marcar_terminado", "reiniciar_mueble",
+             "crear_mueble", "fijar_fecha", "agregar_pendiente",
+             "cerrar_pendiente", "deshacer"}
 
 
 def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | None):
@@ -137,6 +172,11 @@ def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | Non
         elif nombre == "actualizar_etapa":
             r = db.actualizar_etapa(args["mueble_id"], args["etapa"],
                                     args.get("hecho", True), persona_id, mensaje)
+        elif nombre == "marcar_terminado":
+            r = db.marcar_terminado(args["mueble_id"], args.get("terminado", True),
+                                    persona_id, mensaje)
+        elif nombre == "reiniciar_mueble":
+            r = db.reiniciar_mueble(args["mueble_id"], persona_id, mensaje)
         elif nombre == "crear_mueble":
             r = db.crear_mueble(args["obra"], args["nombre"], args.get("grupo"),
                                 persona_id, mensaje)

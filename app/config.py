@@ -36,6 +36,13 @@ URL_PUBLICA = os.getenv("URL_PUBLICA", "")
 
 HISTORIAL = int(os.getenv("HISTORIAL", "12"))
 
+# --- tablero web ------------------------------------------------------
+# El tablero queda expuesto a internet. Con TABLERO_TOKEN puesto, sólo
+# abre quien traiga ?k=<token> en la URL.
+TABLERO_TOKEN = os.getenv("TABLERO_TOKEN", "")
+# Link que el asistente manda por WhatsApp cuando le piden el tablero.
+TABLERO_URL = os.getenv("TABLERO_URL", "")
+
 
 def faltantes() -> list[str]:
     """Variables obligatorias que no están puestas."""

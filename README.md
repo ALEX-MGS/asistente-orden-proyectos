@@ -7,7 +7,8 @@ natural, pedir resúmenes y recibir el tablero como imagen.
 
 - [x] **Fase 0** — Esquema de datos y carga del panel actual (`db/`)
 - [x] **Fase 1** — Bot que entiende y actualiza
-- [~] **Fase 2** — WhatsApp conectado (sandbox de Twilio)
+- [x] **Fase 2** — WhatsApp conectado (sandbox de Twilio)
+- [~] **Fase 2.5** — Desplegado en Railway y tablero web de solo lectura
 - [ ] **Fase 3** — Imagen del tablero
 - [ ] **Fase 4** — Voz y avisos automáticos
 
@@ -160,3 +161,48 @@ mover muebles en el tablero.
 - **Si la firma no cuadra** y todo lo demás está bien, casi siempre es que
   `URL_PUBLICA` no es idéntica a la que pusiste en Twilio (`http` vs `https`,
   una diagonal de más, o el `/whatsapp` faltante).
+
+
+## Tablero web
+
+`GET /tablero?k=<token>` arma la página en el servidor leyendo `v_muebles`,
+`mueble_etapas`, `pendientes` y `cotizaciones`. Es de **solo lectura**: se mira
+aquí, se edita por WhatsApp. Un solo archivo, sin build ni framework de front,
+y esa misma página es la que la Fase 3 va a renderizar a PNG — todo lo que
+mejore aquí mejora también la imagen.
+
+Cada mueble muestra sus cinco etapas como palomas (A C B E I), igual que tu
+panel. Lo atrasado va hasta arriba. Se recarga solo cada 2 minutos.
+
+**El token no es opcional.** Sin `TABLERO_TOKEN`, cualquiera que adivine la URL
+ve tus obras, tus clientes y tus montos. Genera uno así:
+
+    python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+
+## Desplegar en Railway
+
+Con esto se acaba el baile de ngrok: URL fija, y el bot vive aunque tu Mac esté
+apagada.
+
+1. Subir el proyecto a un repo de GitHub (el `.gitignore` ya excluye `.env`).
+2. [railway.app](https://railway.app) → New Project → Deploy from GitHub repo.
+3. Railway detecta `requirements.txt` y usa el `Procfile`. No hay que configurar
+   el puerto: `$PORT` lo pone Railway.
+4. En **Variables**, pegar todo lo del `.env` menos `URL_PUBLICA`, que todavía
+   no conoces.
+5. Settings → Networking → **Generate Domain**. Te da algo como
+   `asistente-obra-production.up.railway.app`.
+6. Con ese dominio, completar tres variables:
+
+       URL_PUBLICA=https://<dominio>/whatsapp
+       TABLERO_TOKEN=<el token que generaste>
+       TABLERO_URL=https://<dominio>/tablero?k=<el token>
+
+7. En Twilio, cambiar **"When a message comes in"** a `https://<dominio>/whatsapp`.
+8. Apagar ngrok y uvicorn. Ya no hacen falta.
+
+Comprobación: abrir `https://<dominio>/` debe dar `"ok": true`, y
+`https://<dominio>/tablero?k=<token>` debe mostrar el tablero.
+
+Con `TABLERO_URL` puesta, el asistente manda ese link cuando le escribes
+"mándame el tablero".

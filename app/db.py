@@ -45,6 +45,16 @@ def actualizar_etapa(mueble_id, etapa, hecho=True, persona=None, mensaje=None):
                 p_hecho=hecho, p_persona=persona, p_mensaje=mensaje)
 
 
+def marcar_terminado(mueble_id, terminado=True, persona=None, mensaje=None):
+    return _rpc("marcar_terminado", p_mueble_id=mueble_id, p_terminado=terminado,
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def reiniciar_mueble(mueble_id, persona=None, mensaje=None):
+    return _rpc("reiniciar_mueble", p_mueble_id=mueble_id,
+                p_persona=persona, p_mensaje=mensaje)
+
+
 def crear_mueble(obra, nombre, grupo=None, persona=None, mensaje=None):
     return _rpc("crear_mueble", p_obra=obra, p_nombre=nombre, p_grupo=grupo,
                 p_persona=persona, p_mensaje=mensaje)
