@@ -38,7 +38,9 @@ def atender(telefono: str, texto: str, persona: dict):
         log.exception("falló el asistente")
         respuesta = f"Se me atoró algo procesando eso ({type(e).__name__}). Inténtalo otra vez."
     db.guardar_mensaje(telefono, "saliente", respuesta, persona["id"])
-    whatsapp.enviar(telefono, respuesta)
+    if not whatsapp.enviar(telefono, respuesta):
+        log.error("La respuesta se guardó en la base pero NO llegó a WhatsApp. "
+                  "El renglón de arriba dice por qué.")
 
 
 @app.get("/")
