@@ -6,10 +6,11 @@ eso cuando encadena varias herramientas, así que contestamos vacío de
 inmediato y mandamos la respuesta real por la API de Twilio.
 """
 import logging
+from datetime import datetime
 
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import BackgroundTasks, Body, FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from . import agente, api, config, db, tablero, whatsapp
@@ -75,6 +76,69 @@ def api_estado(k: str = ""):
     except Exception as e:
         log.exception("falló /api/estado")
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+def marca_panel(accion: str) -> str:
+    """Una marca distinta por clic.
+
+    deshacer() agrupa por mensaje_origen: eso es correcto en WhatsApp,
+    donde un mensaje puede cambiar varias cosas. En el panel cada clic es
+    una acción suelta, así que cada uno lleva su propia marca y se
+    deshace solo.
+    """
+    return f"panel · {accion} · {datetime.now().isoformat(timespec='milliseconds')}"
+
+
+def quien_edita() -> str | None:
+    """A quién se le atribuyen los cambios hechos desde el panel.
+
+    El panel todavía no tiene login: quien trae el token puede editar. Se
+    atribuye al admin para que la bitácora y 'deshacer' funcionen igual
+    que por WhatsApp. Cuando haya login, esto sale de la sesión.
+    """
+    r = (db.db().table("personas").select("id")
+         .eq("rol", "admin").limit(1).execute().data)
+    return r[0]["id"] if r else None
+
+
+@app.post("/api/etapa")
+def api_etapa(k: str = "", cuerpo: dict = Body(...)):
+    """Palomear o despalomear una etapa desde el panel."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(db.actualizar_etapa(
+            cuerpo["mueble_id"], cuerpo["etapa"], bool(cuerpo.get("hecho", True)),
+            quien_edita(), marca_panel("etapa")))
+    except Exception as e:
+        log.exception("falló /api/etapa")
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.post("/api/terminado")
+def api_terminado(k: str = "", cuerpo: dict = Body(...)):
+    """Marcar o desmarcar la palomita de Terminado desde el panel."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(db.marcar_terminado(
+            cuerpo["mueble_id"], bool(cuerpo.get("terminado", True)),
+            quien_edita(), marca_panel("terminado")))
+    except Exception as e:
+        log.exception("falló /api/terminado")
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.post("/api/deshacer")
+def api_deshacer(k: str = ""):
+    """Deshacer el último cambio, igual que por WhatsApp."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(db.deshacer(quien_edita()))
+    except Exception as e:
+        log.exception("falló /api/deshacer")
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
 
 
 @app.get("/tablero", response_class=HTMLResponse)

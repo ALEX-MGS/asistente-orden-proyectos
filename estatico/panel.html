@@ -266,7 +266,6 @@ tr.drag-over-item td{box-shadow:inset 0 2px 0 #1D9E75}
   <div class="proj-actions">
     <div class="hist-bar" style="margin-right:auto">
       <button class="mini-btn" data-act="undo" id="btn-undo" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
-      <button class="mini-btn" data-act="redo" id="btn-redo" title="Rehacer (Ctrl+Y)">↷ Rehacer</button>
     </div>
     <button class="mini-btn" data-act="resumen">Generar resumen</button>
     <button class="mini-btn" data-act="renombrar">Editar proyecto</button>
@@ -641,6 +640,20 @@ function save(){
   renderAll();
   aviso('Este tablero todavía es de solo lectura. Para cambiar algo, escríbele al asistente por WhatsApp.',false);
   setTimeout(load,400);   // vuelve a lo que dice la base
+}
+
+const CLAVES=['aprobado','carpinteria','barniz','entrega','instalacion'];
+
+async function apiPost(ruta, cuerpo){
+  const r=await fetch(API(ruta),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(cuerpo||{})
+  });
+  const txt=await r.text();
+  let o; try{o=JSON.parse(txt)}catch(e){o={error:txt.slice(0,140)}}
+  if(!r.ok||o.error)throw new Error(o.error||('el servidor contestó '+r.status));
+  return o;
 }
 
 function marcarSincronizado(){
@@ -1213,9 +1226,10 @@ function renderAll(){
   $('v-oficina').classList.toggle('hidden',tabActiva!=='oficina');
   if(esProy)renderProyecto();
   renderResumen();
-  const bu=$('btn-undo'),br=$('btn-redo');
-  if(bu)bu.disabled=histIdx<=0;
-  if(br)br.disabled=histIdx>=historial.length-1;
+  // Deshacer ya no depende del historial local: se lo pide al servidor,
+  // que es el único que sabe qué fue lo último que se escribió.
+  const bu=$('btn-undo');
+  if(bu)bu.disabled=false;
 }
 
 document.addEventListener('click',e=>{
@@ -1249,8 +1263,16 @@ document.addEventListener('click',e=>{
   if(act==='exportar'){exportarJSON();return}
   if(act==='exportar-csv'){exportarCSV();return}
   if(act==='importar'){$('file-import').click();return}
-  if(act==='undo'){undo();return}
-  if(act==='redo'){redo();return}
+  if(act==='undo'){
+    apiPost('deshacer',{})
+      .then(r=>{
+        if(!r.ok){aviso(r.motivo||'No hay nada que deshacer',false);return}
+        aviso('Deshecho: '+r.revertidos+(r.revertidos===1?' cambio':' cambios'),true);
+        load();
+      })
+      .catch(e=>aviso('No se pudo deshacer: '+e.message,false));
+    return;
+  }
   if(act==='resumen'&&proy){
     resumenTexto=generarResumen(proy);
     renderResumen();
@@ -1297,8 +1319,12 @@ document.addEventListener('click',e=>{
   }else if(act==='terminado'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
-    it.terminado=!it.terminado;
-    save();renderAll();
+    const previo=it.terminado;
+    it.terminado=!previo; renderAll();
+    apiPost('terminado',{mueble_id:it.id,terminado:it.terminado})
+      .then(()=>{ marcarSincronizado(); })
+      .catch(e=>{ it.terminado=previo; renderAll();
+                  aviso('No se guardó: '+e.message,false); });
   }else if(act==='ren-item'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
@@ -1330,8 +1356,12 @@ document.addEventListener('click',e=>{
   }else if(act==='stage'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
-    it.stages[+btn.dataset.si]=!it.stages[+btn.dataset.si];
-    save();renderAll();
+    const si=+btn.dataset.si, previo=it.stages[si];
+    it.stages[si]=!previo; renderAll();          // se pinta ya, se confirma después
+    apiPost('etapa',{mueble_id:it.id,etapa:CLAVES[si],hecho:it.stages[si]})
+      .then(r=>{ it.terminado=!!r.terminado; renderAll(); marcarSincronizado(); })
+      .catch(e=>{ it.stages[si]=previo; renderAll();
+                  aviso('No se guardó: '+e.message,false); });
   }else if(act==='nota'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
@@ -1414,7 +1444,6 @@ document.addEventListener('keydown',e=>{
   if(!mod)return;
   const k=e.key.toLowerCase();
   if(k==='z'&&!e.shiftKey){e.preventDefault();undo()}
-  else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();redo()}
 });
 
 $('file-import').addEventListener('change',e=>{
