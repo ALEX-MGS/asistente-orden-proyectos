@@ -64,6 +64,23 @@ HERRAMIENTAS = [
         },
     },
     {
+        "name": "poner_nota",
+        "description": (
+            "Escribe o reemplaza la nota de un mueble — eso que en el tablero "
+            "aparece bajo su nombre: 'tapajuntas pendientes', 'por detallar'. "
+            "Es la nota DEL MUEBLE; si lo que piden es una tarea de la obra, usa "
+            "agregar_pendiente. Manda nota vacía para borrarla. Requiere el mueble_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mueble_id": {"type": "string"},
+                "nota": {"type": "string"},
+            },
+            "required": ["mueble_id", "nota"],
+        },
+    },
+    {
         "name": "reiniciar_mueble",
         "description": (
             "Borra TODO el progreso de un mueble de una sola vez: las cinco etapas "
@@ -159,7 +176,7 @@ HERRAMIENTAS = [
 
 # Las que escriben. Después de una de estas el asistente debe confirmar
 # exactamente lo que quedó anotado.
-ESCRITURA = {"actualizar_etapa", "marcar_terminado", "reiniciar_mueble",
+ESCRITURA = {"actualizar_etapa", "marcar_terminado", "reiniciar_mueble", "poner_nota",
              "crear_mueble", "fijar_fecha", "agregar_pendiente",
              "cerrar_pendiente", "deshacer"}
 
@@ -175,6 +192,9 @@ def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | Non
         elif nombre == "marcar_terminado":
             r = db.marcar_terminado(args["mueble_id"], args.get("terminado", True),
                                     persona_id, mensaje)
+        elif nombre == "poner_nota":
+            r = db.poner_nota(args["mueble_id"], args.get("nota", ""),
+                              persona_id, mensaje)
         elif nombre == "reiniciar_mueble":
             r = db.reiniciar_mueble(args["mueble_id"], persona_id, mensaje)
         elif nombre == "crear_mueble":
@@ -197,4 +217,11 @@ def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | Non
             return f"Error: no existe la herramienta {nombre}", True
         return json.dumps(r, ensure_ascii=False, default=str), False
     except Exception as e:
-        return f"Error: {e}", True
+        texto = f"Error: {e}"
+        # El tropiezo más común: usar un id que devolvió OTRA herramienta.
+        # Los ids no son intercambiables entre muebles y pendientes.
+        if "No existe ese mueble" in texto or "No existe ese pendiente" in texto:
+            texto += ("\nPISTA: ese id no corresponde. Vuelve a llamar a buscar_mueble "
+                      "(o buscar_pendiente) y usa el id que ESA búsqueda devuelva. "
+                      "Nunca reutilices un id que te dio otra herramienta.")
+        return texto, True

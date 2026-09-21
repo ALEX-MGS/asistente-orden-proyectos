@@ -50,6 +50,11 @@ def marcar_terminado(mueble_id, terminado=True, persona=None, mensaje=None):
                 p_persona=persona, p_mensaje=mensaje)
 
 
+def poner_nota(mueble_id, nota, persona=None, mensaje=None):
+    return _rpc("poner_nota", p_mueble_id=mueble_id, p_nota=nota,
+                p_persona=persona, p_mensaje=mensaje)
+
+
 def reiniciar_mueble(mueble_id, persona=None, mensaje=None):
     return _rpc("reiniciar_mueble", p_mueble_id=mueble_id,
                 p_persona=persona, p_mensaje=mensaje)
