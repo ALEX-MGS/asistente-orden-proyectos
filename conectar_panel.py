@@ -110,11 +110,16 @@ MANEJADOR_ETAPA = '''  }else if(act==='stage'&&proy){
 MANEJADOR_TERMINADO = '''  }else if(act==='terminado'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
-    const previo=it.terminado;
-    it.terminado=!previo; renderAll();
+    const previo=it.terminado, etapasPrevias=it.stages.slice();
+    it.terminado=!previo;
+    // Marcar Terminado cierra también las cinco etapas, como en la base.
+    // Desmarcar no las toca: que no esté terminado no significa que nunca
+    // se barnizó.
+    if(it.terminado)it.stages=[true,true,true,true,true];
+    renderAll();
     apiPost('terminado',{mueble_id:it.id,terminado:it.terminado})
       .then(()=>{ marcarSincronizado(); })
-      .catch(e=>{ it.terminado=previo; renderAll();
+      .catch(e=>{ it.terminado=previo; it.stages=etapasPrevias; renderAll();
                   aviso('No se guardó: '+e.message,false); });'''
 
 MANEJADOR_UNDO = '''  if(act==='undo'){
