@@ -101,6 +101,18 @@ def quien_edita() -> str | None:
     return r[0]["id"] if r else None
 
 
+@app.get("/api/version")
+def api_version(k: str = ""):
+    """Sólo la huella. El panel la consulta seguido; pesa unos bytes."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse({"v": api.version()})
+    except Exception as e:
+        log.exception("falló /api/version")
+        return JSONResponse({"error": str(e)[:200]}, status_code=500)
+
+
 @app.post("/api/etapa")
 def api_etapa(k: str = "", cuerpo: dict = Body(...)):
     """Palomear o despalomear una etapa desde el panel."""

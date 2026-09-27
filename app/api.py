@@ -16,6 +16,21 @@ def color_de(nombre: str) -> str:
     return COLORES[sum(ord(c) for c in (nombre or "")) % len(COLORES)]
 
 
+def version() -> str:
+    """Huella del estado, para saber si cambió algo sin traérselo todo.
+
+    Cada escritura del asistente y del panel deja una fila en bitacora,
+    así que su último id basta. Se suma la fecha del mueble tocado más
+    recientemente, para no perderse un cambio hecho a mano en Supabase.
+    """
+    cli = db.db()
+    b = (cli.table("bitacora").select("id")
+         .order("id", desc=True).limit(1).execute().data)
+    m = (cli.table("muebles").select("updated_at")
+         .order("updated_at", desc=True).limit(1).execute().data)
+    return f"{b[0]['id'] if b else 0}|{m[0]['updated_at'] if m else ''}"
+
+
 def estado() -> dict:
     cli = db.db()
 
@@ -78,6 +93,7 @@ def estado() -> dict:
         g["tasks"].append({"id": t["id"], "text": t["texto"], "done": bool(t["hecho"])})
 
     return {
+        "v": version(),
         "proyectos": list(proyectos.values()),
         "pends": list(grupos.values()),
         "cotizaciones": [{

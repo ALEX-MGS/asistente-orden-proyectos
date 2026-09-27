@@ -71,6 +71,7 @@ async function load(){
     pends=o.pends||[];
     cotizaciones=o.cotizaciones||[];
     oficina=o.oficina||[];
+    versionActual=o.v||null;
     marcarSincronizado();
   }catch(e){
     aviso('No se pudo cargar el tablero: '+e.message,false);
@@ -90,9 +91,26 @@ function save(){
   setTimeout(load,400);
 }
 
-setInterval(()=>{ if(!editorCfg) load(); }, 60000);
+let versionActual=null;
+
+// Cada 8 segundos pregunta una sola cosa: "¿cambió algo?". Son unos
+// bytes. Sólo cuando la respuesta cambia se trae el tablero completo.
+// Así, lo que actualices por WhatsApp aparece aquí casi de inmediato.
+async function revisarCambios(){
+  if(editorCfg||cargando)return;
+  try{
+    const r=await fetch(API('version'),{cache:'no-store'});
+    if(!r.ok)return;
+    const o=await r.json();
+    if(versionActual===null){versionActual=o.v;return}
+    if(o.v!==versionActual){versionActual=o.v;load()}
+  }catch(e){}
+}
+
+setInterval(revisarCambios, 8000);
+setInterval(()=>{ if(!editorCfg) load(); }, 300000);   // red de seguridad
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&!editorCfg) load();
+  if(document.visibilityState==='visible'&&!editorCfg) revisarCambios();
 });
 
 '''

@@ -787,6 +787,7 @@ async function load(){
     pends=o.pends||[];
     cotizaciones=o.cotizaciones||[];
     oficina=o.oficina||[];
+    versionActual=o.v||null;
     marcarSincronizado();
   }catch(e){
     aviso('No se pudo cargar el tablero: '+e.message,false);
@@ -806,9 +807,26 @@ function save(){
   setTimeout(load,400);
 }
 
-setInterval(()=>{ if(!editorCfg) load(); }, 60000);
+let versionActual=null;
+
+// Cada 8 segundos pregunta una sola cosa: "¿cambió algo?". Son unos
+// bytes. Sólo cuando la respuesta cambia se trae el tablero completo.
+// Así, lo que actualices por WhatsApp aparece aquí casi de inmediato.
+async function revisarCambios(){
+  if(editorCfg||cargando)return;
+  try{
+    const r=await fetch(API('version'),{cache:'no-store'});
+    if(!r.ok)return;
+    const o=await r.json();
+    if(versionActual===null){versionActual=o.v;return}
+    if(o.v!==versionActual){versionActual=o.v;load()}
+  }catch(e){}
+}
+
+setInterval(revisarCambios, 8000);
+setInterval(()=>{ if(!editorCfg) load(); }, 300000);   // red de seguridad
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&!editorCfg) load();
+  if(document.visibilityState==='visible'&&!editorCfg) revisarCambios();
 });
 
 // ===== RESPALDO: exportar / importar =====
@@ -1659,11 +1677,16 @@ document.addEventListener('click',e=>{
   }else if(act==='terminado'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
-    const previo=it.terminado;
-    it.terminado=!previo; renderAll();
+    const previo=it.terminado, etapasPrevias=it.stages.slice();
+    it.terminado=!previo;
+    // Marcar Terminado cierra también las cinco etapas, como en la base.
+    // Desmarcar no las toca: que no esté terminado no significa que nunca
+    // se barnizó.
+    if(it.terminado)it.stages=[true,true,true,true,true];
+    renderAll();
     apiPost('terminado',{mueble_id:it.id,terminado:it.terminado})
       .then(()=>{ marcarSincronizado(); })
-      .catch(e=>{ it.terminado=previo; renderAll();
+      .catch(e=>{ it.terminado=previo; it.stages=etapasPrevias; renderAll();
                   aviso('No se guardó: '+e.message,false); });
   }else if(act==='ren-item'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
