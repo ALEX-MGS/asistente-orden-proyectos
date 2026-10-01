@@ -18,6 +18,9 @@ ESPERADAS = [
     "cerrar_pendiente", "deshacer",
     # edición desde el panel (10_edicion.sql)
     "renombrar_mueble", "renombrar_grupo", "editar_obra", "editar_cotizacion",
+    # altas desde el panel (11_crear.sql)
+    "crear_obra", "agregar_mueble", "agregar_pendiente_en",
+    "pendiente_de_oficina", "crear_cotizacion",
 ]
 
 

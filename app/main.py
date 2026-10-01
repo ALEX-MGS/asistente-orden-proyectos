@@ -155,6 +155,15 @@ ACCIONES: dict[str, tuple] = {
     "editar_obra":       (db.editar_obra,       ("obra_id", "cambios")),
     "pendiente":         (db.cerrar_pendiente,  ("pendiente_id", "hecho")),
     "editar_cotizacion": (db.editar_cotizacion, ("cotizacion_id", "cambios")),
+
+    # altas (11_crear.sql)
+    "crear_obra":        (db.crear_obra,        ("nombre", "fecha", "proyecto")),
+    "crear_mueble":      (db.agregar_mueble,    ("obra_id", "nombre", "grupo")),
+    "crear_pendiente":   (db.agregar_pendiente_en, ("obra_id", "texto")),
+    # da de alta la obra y su primer pendiente en una sola acción
+    "crear_obra_pendiente": (db.agregar_pendiente, ("obra", "texto")),
+    "crear_oficina":     (db.pendiente_de_oficina, ("texto",)),
+    "crear_cotizacion":  (db.crear_cotizacion,  ("cliente", "concepto", "monto", "fecha")),
 }
 
 

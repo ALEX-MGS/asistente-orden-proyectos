@@ -790,6 +790,33 @@ function guardar(accion, cuerpo, revertir){
     });
 }
 
+// Dar de alta necesita el id que asigna la base. Se pinta un renglón
+// provisional y en cuanto el servidor contesta se le pone su id de
+// verdad; si falla, 'quitar' lo saca de la pantalla.
+function nuevo(accion, cuerpo, crear, quitar, fijar){
+  const tmp='tmp-'+Date.now()+Math.random().toString(36).slice(2,6);
+  const obj=crear(tmp);
+  renderAll();
+  apiPost('accion', Object.assign({accion:accion}, cuerpo))
+    .then(o=>{
+      const r=(o&&o.r)||{};
+      if(fijar)fijar(obj,r);
+      else if(r.id&&obj){ if(tabActiva===obj.id)tabActiva=r.id; obj.id=r.id; }
+      if(o&&o.v)versionActual=o.v;
+      renderAll(); marcarSincronizado();
+    })
+    .catch(e=>{
+      if(quitar)quitar(obj);
+      renderAll();
+      aviso('No se guardó: '+e.message,false);
+    });
+}
+
+// El mismo color que le pone el servidor, para que la obra nueva no
+// cambie de color al recargar la página.
+const COLORES_SRV=['coral','blue','pink','purple','amber','green','teal','gray'];
+function colorDe(n){let s=0;for(const c of (n||''))s+=c.codePointAt(0);return COLORES_SRV[s%8]}
+
 async function load(){
   if(cargando)return;
   cargando=true;
@@ -1656,8 +1683,10 @@ document.addEventListener('click',e=>{
     openEditor({title:'Nuevo proyecto',fields:[{placeholder:'Nombre del proyecto'},{label:'Fecha de entrega (opcional)',type:'date'}],okText:'Crear',
       onOk:([v,f])=>{
         if(!v)return;
-        const np={id:'p'+Date.now(),nombre:v,fechaEntrega:f||'',items:[]};
-        proyectos.push(np);tabActiva=np.id;save();renderAll();
+        nuevo('crear_obra',{nombre:v,fecha:f||null,proyecto:true},
+          tmp=>{const np={id:tmp,nombre:v,fechaEntrega:f||'',items:[]};
+                proyectos.push(np);tabActiva=np.id;return np},
+          np=>{proyectos=proyectos.filter(p=>p!==np);tabActiva='dash'});
       }});
   }else if(act==='eliminar-proy'&&proy){
     openEditor({title:'Eliminar proyecto',text:'Se eliminará "'+proy.nombre+'" con todos sus muebles. No se puede deshacer.',danger:true,okText:'Eliminar',
@@ -1681,14 +1710,22 @@ document.addEventListener('click',e=>{
       fields:[{placeholder:'Nombre del mueble'},{placeholder:'Grupo / habitación (opcional)'}],okText:'Agregar',
       onOk:([nombre,grupo])=>{
         if(!nombre)return;
-        proy.items.push(nuevoItem(nombre,grupo));save();renderAll();
+        nuevo('crear_mueble',{obra_id:proy.id,nombre:nombre,grupo:grupo||null},
+          tmp=>{const it=nuevoItem(nombre,grupo);
+                it.id=tmp;it.fecha='';it.terminado=false;
+                proy.items.push(it);return it},
+          it=>{proy.items=proy.items.filter(x=>x!==it)});
       }});
   }else if(act==='add-grupo'&&proy){
     openEditor({title:'Nuevo grupo / habitación',
       fields:[{placeholder:'Nombre del grupo (ej: Habitación principal)'},{placeholder:'Primer mueble del grupo'}],okText:'Crear',
       onOk:([g,nombre])=>{
         if(!g||!nombre)return;
-        proy.items.push(nuevoItem(nombre,g));save();renderAll();
+        nuevo('crear_mueble',{obra_id:proy.id,nombre:nombre,grupo:g},
+          tmp=>{const it=nuevoItem(nombre,g);
+                it.id=tmp;it.fecha='';it.terminado=false;
+                proy.items.push(it);return it},
+          it=>{proy.items=proy.items.filter(x=>x!==it)});
       }});
   }else if(act==='fecha-item'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
@@ -1779,7 +1816,9 @@ document.addEventListener('click',e=>{
     openEditor({title:'Nueva tarea — '+o.obra,fields:[{placeholder:'Descripción de la tarea'}],okText:'Agregar',
       onOk:([v])=>{
         if(!v)return;
-        o.tasks.push({id:'t'+Date.now(),text:v,done:false});save();renderAll();
+        nuevo('crear_pendiente',{obra_id:o.id,texto:v},
+          tmp=>{const t={id:tmp,text:v,done:false};o.tasks.push(t);return t},
+          t=>{o.tasks=o.tasks.filter(x=>x!==t)});
       }});
   }else if(act==='del-obra'){
     const o=pends.find(x=>x.id===btn.dataset.oid);
@@ -1789,18 +1828,29 @@ document.addEventListener('click',e=>{
         pends=pends.filter(x=>x.id!==o.id);save();renderAll();
       }});
   }else if(act==='newobra'){
-    openEditor({title:'Nueva obra',fields:[{placeholder:'Nombre de la obra o cliente'}],okText:'Crear',
-      onOk:([v])=>{
-        if(!v)return;
-        pends.push({id:'o'+Date.now(),obra:v,color:CK[pends.length%CK.length],tasks:[]});save();renderAll();
+    openEditor({title:'Nueva obra',
+      text:'La obra nace con su primer pendiente; después le agregas los que quieras.',
+      fields:[{placeholder:'Nombre de la obra o cliente'},{placeholder:'Primer pendiente'}],okText:'Crear',
+      onOk:([v,t])=>{
+        if(!v||!t)return;
+        nuevo('crear_obra_pendiente',{obra:v,texto:t},
+          tmp=>{const o={id:tmp,obra:v,color:colorDe(v),
+                         tasks:[{id:tmp+'-t',text:t,done:false}]};
+                pends.push(o);return o},
+          o=>{pends=pends.filter(x=>x!==o)},
+          (o,r)=>{if(r.obra_id)o.id=r.obra_id; if(r.id&&o.tasks[0])o.tasks[0].id=r.id;});
       }});
   }else if(act==='add-cotiz'){
     openEditor({title:'Nueva cotización',
       fields:[{label:'Cliente',placeholder:'Nombre del cliente'},{label:'Concepto (opcional)',placeholder:'Ej: Closet recámara principal'},{label:'Monto',type:'number',placeholder:'0.00'},{label:'Fecha',type:'date',value:new Date().toISOString().slice(0,10)}],okText:'Crear',
       onOk:([cliente,concepto,monto,fecha])=>{
         if(!cliente)return;
-        cotizaciones.push({id:'c'+Date.now(),cliente,concepto:concepto||'',monto:monto||'',fecha:fecha||'',estado:'enviada',nota:''});
-        save();renderAll();
+        nuevo('crear_cotizacion',
+          {cliente:cliente,concepto:concepto||null,monto:monto||null,fecha:fecha||null},
+          tmp=>{const c={id:tmp,cliente,concepto:concepto||'',monto:monto||'',
+                         fecha:fecha||'',estado:'enviada',nota:''};
+                cotizaciones.push(c);return c},
+          c=>{cotizaciones=cotizaciones.filter(x=>x!==c)});
       }});
   }else if(act==='cot-nota'){
     const c=cotizaciones.find(x=>x.id===btn.dataset.cid);
@@ -1820,7 +1870,9 @@ document.addEventListener('click',e=>{
     openEditor({title:'Nuevo pendiente de oficina',fields:[{placeholder:'Descripción del pendiente'}],okText:'Agregar',
       onOk:([v])=>{
         if(!v)return;
-        oficina.push({id:'of'+Date.now(),text:v,done:false});save();renderAll();
+        nuevo('crear_oficina',{texto:v},
+          tmp=>{const o={id:tmp,text:v,done:false};oficina.push(o);return o},
+          o=>{oficina=oficina.filter(x=>x!==o)});
       }});
   }else if(act==='of-toggle'){
     const o=oficina.find(x=>x.id===btn.dataset.oid);

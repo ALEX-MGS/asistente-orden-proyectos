@@ -79,6 +79,33 @@ function guardar(accion, cuerpo, revertir){
     });
 }
 
+// Dar de alta necesita el id que asigna la base. Se pinta un renglón
+// provisional y en cuanto el servidor contesta se le pone su id de
+// verdad; si falla, 'quitar' lo saca de la pantalla.
+function nuevo(accion, cuerpo, crear, quitar, fijar){
+  const tmp='tmp-'+Date.now()+Math.random().toString(36).slice(2,6);
+  const obj=crear(tmp);
+  renderAll();
+  apiPost('accion', Object.assign({accion:accion}, cuerpo))
+    .then(o=>{
+      const r=(o&&o.r)||{};
+      if(fijar)fijar(obj,r);
+      else if(r.id&&obj){ if(tabActiva===obj.id)tabActiva=r.id; obj.id=r.id; }
+      if(o&&o.v)versionActual=o.v;
+      renderAll(); marcarSincronizado();
+    })
+    .catch(e=>{
+      if(quitar)quitar(obj);
+      renderAll();
+      aviso('No se guardó: '+e.message,false);
+    });
+}
+
+// El mismo color que le pone el servidor, para que la obra nueva no
+// cambie de color al recargar la página.
+const COLORES_SRV=['coral','blue','pink','purple','amber','green','teal','gray'];
+function colorDe(n){let s=0;for(const c of (n||''))s+=c.codePointAt(0);return COLORES_SRV[s%8]}
+
 async function load(){
   if(cargando)return;
   cargando=true;
@@ -263,6 +290,117 @@ EDICIONES: list[tuple[str, str, str]] = [
   guardar('editar_cotizacion',{cotizacion_id:c.id,cambios:{estado:sel.value}},
           ()=>{c.estado=antes});
 });""",
+    ),
+    # --- altas (tanda 2) ---
+    (
+        "nuevo proyecto",
+        """      onOk:([v,f])=>{
+        if(!v)return;
+        const np={id:'p'+Date.now(),nombre:v,fechaEntrega:f||'',items:[]};
+        proyectos.push(np);tabActiva=np.id;save();renderAll();
+      }});""",
+        """      onOk:([v,f])=>{
+        if(!v)return;
+        nuevo('crear_obra',{nombre:v,fecha:f||null,proyecto:true},
+          tmp=>{const np={id:tmp,nombre:v,fechaEntrega:f||'',items:[]};
+                proyectos.push(np);tabActiva=np.id;return np},
+          np=>{proyectos=proyectos.filter(p=>p!==np);tabActiva='dash'});
+      }});""",
+    ),
+    (
+        "agregar mueble",
+        """      onOk:([nombre,grupo])=>{
+        if(!nombre)return;
+        proy.items.push(nuevoItem(nombre,grupo));save();renderAll();
+      }});""",
+        """      onOk:([nombre,grupo])=>{
+        if(!nombre)return;
+        nuevo('crear_mueble',{obra_id:proy.id,nombre:nombre,grupo:grupo||null},
+          tmp=>{const it=nuevoItem(nombre,grupo);
+                it.id=tmp;it.fecha='';it.terminado=false;
+                proy.items.push(it);return it},
+          it=>{proy.items=proy.items.filter(x=>x!==it)});
+      }});""",
+    ),
+    (
+        "agregar grupo",
+        """      onOk:([g,nombre])=>{
+        if(!g||!nombre)return;
+        proy.items.push(nuevoItem(nombre,g));save();renderAll();
+      }});""",
+        """      onOk:([g,nombre])=>{
+        if(!g||!nombre)return;
+        nuevo('crear_mueble',{obra_id:proy.id,nombre:nombre,grupo:g},
+          tmp=>{const it=nuevoItem(nombre,g);
+                it.id=tmp;it.fecha='';it.terminado=false;
+                proy.items.push(it);return it},
+          it=>{proy.items=proy.items.filter(x=>x!==it)});
+      }});""",
+    ),
+    (
+        "agregar pendiente de obra",
+        """      onOk:([v])=>{
+        if(!v)return;
+        o.tasks.push({id:'t'+Date.now(),text:v,done:false});save();renderAll();
+      }});""",
+        """      onOk:([v])=>{
+        if(!v)return;
+        nuevo('crear_pendiente',{obra_id:o.id,texto:v},
+          tmp=>{const t={id:tmp,text:v,done:false};o.tasks.push(t);return t},
+          t=>{o.tasks=o.tasks.filter(x=>x!==t)});
+      }});""",
+    ),
+    (
+        "nueva obra de pendientes",
+        """  }else if(act==='newobra'){
+    openEditor({title:'Nueva obra',fields:[{placeholder:'Nombre de la obra o cliente'}],okText:'Crear',
+      onOk:([v])=>{
+        if(!v)return;
+        pends.push({id:'o'+Date.now(),obra:v,color:CK[pends.length%CK.length],tasks:[]});save();renderAll();
+      }});""",
+        """  }else if(act==='newobra'){
+    openEditor({title:'Nueva obra',
+      text:'La obra nace con su primer pendiente; después le agregas los que quieras.',
+      fields:[{placeholder:'Nombre de la obra o cliente'},{placeholder:'Primer pendiente'}],okText:'Crear',
+      onOk:([v,t])=>{
+        if(!v||!t)return;
+        nuevo('crear_obra_pendiente',{obra:v,texto:t},
+          tmp=>{const o={id:tmp,obra:v,color:colorDe(v),
+                         tasks:[{id:tmp+'-t',text:t,done:false}]};
+                pends.push(o);return o},
+          o=>{pends=pends.filter(x=>x!==o)},
+          (o,r)=>{if(r.obra_id)o.id=r.obra_id; if(r.id&&o.tasks[0])o.tasks[0].id=r.id;});
+      }});""",
+    ),
+    (
+        "nueva cotización",
+        """      onOk:([cliente,concepto,monto,fecha])=>{
+        if(!cliente)return;
+        cotizaciones.push({id:'c'+Date.now(),cliente,concepto:concepto||'',monto:monto||'',fecha:fecha||'',estado:'enviada',nota:''});
+        save();renderAll();
+      }});""",
+        """      onOk:([cliente,concepto,monto,fecha])=>{
+        if(!cliente)return;
+        nuevo('crear_cotizacion',
+          {cliente:cliente,concepto:concepto||null,monto:monto||null,fecha:fecha||null},
+          tmp=>{const c={id:tmp,cliente,concepto:concepto||'',monto:monto||'',
+                         fecha:fecha||'',estado:'enviada',nota:''};
+                cotizaciones.push(c);return c},
+          c=>{cotizaciones=cotizaciones.filter(x=>x!==c)});
+      }});""",
+    ),
+    (
+        "nuevo pendiente de oficina",
+        """      onOk:([v])=>{
+        if(!v)return;
+        oficina.push({id:'of'+Date.now(),text:v,done:false});save();renderAll();
+      }});""",
+        """      onOk:([v])=>{
+        if(!v)return;
+        nuevo('crear_oficina',{texto:v},
+          tmp=>{const o={id:tmp,text:v,done:false};oficina.push(o);return o},
+          o=>{oficina=oficina.filter(x=>x!==o)});
+      }});""",
     ),
 ]
 

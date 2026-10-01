@@ -61,8 +61,27 @@ def reiniciar_mueble(mueble_id, persona=None, mensaje=None):
 
 
 def crear_mueble(obra, nombre, grupo=None, persona=None, mensaje=None):
+    """Por nombre de obra. La usa WhatsApp, donde la persona dice 'en Silver Deer'."""
     return _rpc("crear_mueble", p_obra=obra, p_nombre=nombre, p_grupo=grupo,
                 p_persona=persona, p_mensaje=mensaje)
+
+
+def agregar_mueble(obra_id, nombre, grupo=None, persona=None, mensaje=None):
+    """Por id de obra. La usa el panel, donde el id ya se conoce."""
+    return _rpc("agregar_mueble", p_obra_id=obra_id, p_nombre=nombre,
+                p_grupo=grupo or None, p_persona=persona, p_mensaje=mensaje)
+
+
+def crear_obra(nombre, fecha=None, proyecto=False, persona=None, mensaje=None):
+    return _rpc("crear_obra", p_nombre=nombre, p_fecha=fecha or None,
+                p_proyecto=bool(proyecto), p_tipo="obra",
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def crear_cotizacion(cliente, concepto=None, monto=None, fecha=None,
+                     persona=None, mensaje=None):
+    return _rpc("crear_cotizacion", p_cliente=cliente, p_concepto=concepto,
+                p_monto=monto, p_fecha=fecha, p_persona=persona, p_mensaje=mensaje)
 
 
 def fijar_fecha(mueble_id, fecha, persona=None, mensaje=None):
@@ -92,7 +111,19 @@ def editar_cotizacion(cotizacion_id, cambios: dict, persona=None, mensaje=None):
 
 
 def agregar_pendiente(obra, texto, persona=None, mensaje=None):
+    """Por nombre de obra; si no existe, la crea. Sirve para dar de alta
+    una obra y su primer pendiente de un solo golpe."""
     return _rpc("agregar_pendiente", p_obra=obra, p_texto=texto,
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def agregar_pendiente_en(obra_id, texto, persona=None, mensaje=None):
+    return _rpc("agregar_pendiente_en", p_obra_id=obra_id, p_texto=texto,
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def pendiente_de_oficina(texto, persona=None, mensaje=None):
+    return _rpc("pendiente_de_oficina", p_texto=texto,
                 p_persona=persona, p_mensaje=mensaje)
 
 

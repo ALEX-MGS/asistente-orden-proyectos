@@ -38,7 +38,9 @@ def estado() -> dict:
                .eq("archivado", False).order("obra").order("orden")
                .execute().data)
     etapas = cli.table("mueble_etapas").select("mueble_id, etapa_id, hecho").execute().data
-    obras = cli.table("obras").select("id, nombre, tipo, fecha_entrega, orden").execute().data
+    obras = (cli.table("obras")
+             .select("id, nombre, tipo, fecha_entrega, orden, es_proyecto")
+             .execute().data)
     pends = (cli.table("pendientes").select("id, texto, hecho, obra_id, created_at")
              .order("created_at").execute().data)
     cotiz = (cli.table("cotizaciones")
@@ -76,6 +78,19 @@ def estado() -> dict:
             "fecha": m.get("fecha_entrega") or "",
             "terminado": bool(m.get("terminado")),
         })
+
+    # Un proyecto recién creado todavía no tiene muebles. Sin esto
+    # desaparecería al recargar, porque la lista de arriba sale de los
+    # muebles. Las obras que sólo llevan pendientes no entran: ésas
+    # viven en la pestaña de Pendientes, como siempre.
+    for o in obras:
+        if o.get("es_proyecto") and o["id"] not in proyectos:
+            proyectos[o["id"]] = {
+                "id": o["id"],
+                "nombre": o.get("nombre") or "—",
+                "fechaEntrega": o.get("fecha_entrega") or "",
+                "items": [],
+            }
 
     # --- pendientes agrupados por obra; los de obra interna van a Oficina
     grupos: dict[str, dict] = {}
