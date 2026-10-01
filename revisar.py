@@ -14,8 +14,10 @@ from app import config, db
 ESPERADAS = [
     "buscar_mueble", "buscar_pendiente", "resumen",
     "actualizar_etapa", "marcar_terminado", "reiniciar_mueble",
-    "crear_mueble", "fijar_fecha", "agregar_pendiente",
+    "poner_nota", "crear_mueble", "fijar_fecha", "agregar_pendiente",
     "cerrar_pendiente", "deshacer",
+    # edición desde el panel (10_edicion.sql)
+    "renombrar_mueble", "renombrar_grupo", "editar_obra", "editar_cotizacion",
 ]
 
 
@@ -54,8 +56,7 @@ def main() -> int:
             print(f"   {'ok  ' if n in presentes else 'FALTA'}  {n}")
         if ausentes:
             print(f"\n   >>> Faltan {len(ausentes)}. Corre en el SQL Editor, en orden,")
-            print("       db/03_funciones.sql, db/04_terminado.sql,")
-            print("       db/05_correcciones.sql y db/06_utilidades.sql.")
+            print("       los archivos de db/ que no hayas corrido, del 03 al 10.")
 
     print()
     print("=" * 66)

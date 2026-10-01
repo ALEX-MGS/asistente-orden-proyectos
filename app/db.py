@@ -66,8 +66,29 @@ def crear_mueble(obra, nombre, grupo=None, persona=None, mensaje=None):
 
 
 def fijar_fecha(mueble_id, fecha, persona=None, mensaje=None):
-    return _rpc("fijar_fecha", p_mueble_id=mueble_id, p_fecha=fecha,
+    # El panel manda "" cuando le quitas la fecha; Postgres espera null.
+    return _rpc("fijar_fecha", p_mueble_id=mueble_id, p_fecha=fecha or None,
                 p_persona=persona, p_mensaje=mensaje)
+
+
+def renombrar_mueble(mueble_id, nombre, persona=None, mensaje=None):
+    return _rpc("renombrar_mueble", p_mueble_id=mueble_id, p_nombre=nombre,
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def renombrar_grupo(obra_id, grupo, nuevo, persona=None, mensaje=None):
+    return _rpc("renombrar_grupo", p_obra_id=obra_id, p_grupo=grupo or "",
+                p_nuevo=nuevo, p_persona=persona, p_mensaje=mensaje)
+
+
+def editar_obra(obra_id, cambios: dict, persona=None, mensaje=None):
+    return _rpc("editar_obra", p_obra_id=obra_id, p_cambios=cambios,
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def editar_cotizacion(cotizacion_id, cambios: dict, persona=None, mensaje=None):
+    return _rpc("editar_cotizacion", p_cotizacion_id=cotizacion_id,
+                p_cambios=cambios, p_persona=persona, p_mensaje=mensaje)
 
 
 def agregar_pendiente(obra, texto, persona=None, mensaje=None):

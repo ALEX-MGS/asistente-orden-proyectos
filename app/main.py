@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Body, FastAPI, Request
+from fastapi import BackgroundTasks, Body, FastAPI, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from . import agente, api, config, db, tablero, whatsapp
@@ -52,6 +52,12 @@ def salud():
 
 
 PANEL = Path(__file__).resolve().parent.parent / "estatico" / "panel.html"
+
+
+@app.get("/favicon.ico")
+def favicon():
+    """Sin esto cada visita al panel deja un 404 en la bitácora de Railway."""
+    return Response(status_code=204)
 
 
 def con_token(k: str) -> bool:
@@ -101,6 +107,85 @@ def quien_edita() -> str | None:
     return r[0]["id"] if r else None
 
 
+def motivo(e: Exception) -> str:
+    """El texto que el panel le enseña a la persona.
+
+    Cuando una función SQL hace `raise exception 'Ya hay otro mueble con
+    ese nombre'`, ese texto viene envuelto en el error de PostgREST. Sin
+    esto el panel mostraría el JSON completo y nadie entendería nada.
+    """
+    for atributo in ("message", "details"):
+        v = getattr(e, atributo, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:200]
+    return f"{type(e).__name__}: {e}"[:200]
+
+
+def con_version(resultado):
+    """Le pega la huella nueva a la respuesta de una escritura.
+
+    Así el navegador que hizo el cambio sabe que ya está al día y no se
+    recarga completo ocho segundos después por su propio clic.
+    """
+    try:
+        v = api.version()
+    except Exception:
+        return resultado
+    if isinstance(resultado, dict):
+        return {**resultado, "v": v}
+    return {"r": resultado, "v": v}
+
+
+# ---------------------------------------------------------------------
+# Todo lo que el panel edita entra por /api/accion.
+#
+# Es una sola puerta con lista blanca: si la acción no está aquí, no
+# existe. Agregar un botón nuevo es agregar un renglón, no una ruta — y
+# ninguna petición puede llamar a algo que no esté en esta tabla.
+#
+# Cada renglón es: nombre → (función de db.py, las claves del cuerpo en
+# el orden en que la función las espera). Después de esas van siempre
+# quién edita y la marca del clic.
+# ---------------------------------------------------------------------
+ACCIONES: dict[str, tuple] = {
+    "nota":              (db.poner_nota,        ("mueble_id", "nota")),
+    "fecha":             (db.fijar_fecha,       ("mueble_id", "fecha")),
+    "renombrar_mueble":  (db.renombrar_mueble,  ("mueble_id", "nombre")),
+    "renombrar_grupo":   (db.renombrar_grupo,   ("obra_id", "grupo", "nuevo")),
+    "editar_obra":       (db.editar_obra,       ("obra_id", "cambios")),
+    "pendiente":         (db.cerrar_pendiente,  ("pendiente_id", "hecho")),
+    "editar_cotizacion": (db.editar_cotizacion, ("cotizacion_id", "cambios")),
+}
+
+
+@app.post("/api/accion")
+def api_accion(k: str = "", cuerpo: dict = Body(...)):
+    """Una edición del panel."""
+    if not con_token(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+
+    nombre = (cuerpo or {}).get("accion") or ""
+    entrada = ACCIONES.get(nombre)
+    if entrada is None:
+        return JSONResponse({"error": f"acción desconocida: {nombre}"},
+                            status_code=400)
+
+    funcion, claves = entrada
+    faltan = [c for c in claves if c not in cuerpo]
+    if faltan:
+        return JSONResponse({"error": "falta " + ", ".join(faltan)},
+                            status_code=400)
+
+    try:
+        resultado = funcion(*(cuerpo[c] for c in claves),
+                            quien_edita(), marca_panel(nombre))
+    except Exception as e:
+        log.exception("falló /api/accion %s", nombre)
+        return JSONResponse({"error": motivo(e)}, status_code=400)
+
+    return JSONResponse({"ok": True, **con_version({"r": resultado})})
+
+
 @app.get("/api/version")
 def api_version(k: str = ""):
     """Sólo la huella. El panel la consulta seguido; pesa unos bytes."""
@@ -119,12 +204,12 @@ def api_etapa(k: str = "", cuerpo: dict = Body(...)):
     if not con_token(k):
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
-        return JSONResponse(db.actualizar_etapa(
+        return JSONResponse(con_version(db.actualizar_etapa(
             cuerpo["mueble_id"], cuerpo["etapa"], bool(cuerpo.get("hecho", True)),
-            quien_edita(), marca_panel("etapa")))
+            quien_edita(), marca_panel("etapa"))))
     except Exception as e:
         log.exception("falló /api/etapa")
-        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+        return JSONResponse({"error": motivo(e)}, status_code=400)
 
 
 @app.post("/api/terminado")
@@ -133,12 +218,12 @@ def api_terminado(k: str = "", cuerpo: dict = Body(...)):
     if not con_token(k):
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
-        return JSONResponse(db.marcar_terminado(
+        return JSONResponse(con_version(db.marcar_terminado(
             cuerpo["mueble_id"], bool(cuerpo.get("terminado", True)),
-            quien_edita(), marca_panel("terminado")))
+            quien_edita(), marca_panel("terminado"))))
     except Exception as e:
         log.exception("falló /api/terminado")
-        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+        return JSONResponse({"error": motivo(e)}, status_code=400)
 
 
 @app.post("/api/deshacer")
@@ -150,7 +235,7 @@ def api_deshacer(k: str = ""):
         return JSONResponse(db.deshacer(quien_edita()))
     except Exception as e:
         log.exception("falló /api/deshacer")
-        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+        return JSONResponse({"error": motivo(e)}, status_code=400)
 
 
 @app.get("/tablero", response_class=HTMLResponse)

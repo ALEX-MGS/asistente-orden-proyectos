@@ -6,12 +6,17 @@ Tú sigues diseñando el panel donde quieras — en otro chat, a mano, como
 sea. Cuando lo exportes, este comando le cambia la capa de datos y lo
 deja en estatico/panel.html listo para desplegar.
 
-Toca seis cosas y nada más:
+Toca lo siguiente y nada más:
   · quita los datos de fábrica (vienen del servidor)
   · load() lee de /api/estado
   · las etapas y Terminado escriben en la base
+  · edición: nota, fecha, renombrar mueble y grupo, editar proyecto,
+    palomear pendientes de obra y oficina, estado y nota de cotización
   · Deshacer llama al servidor; Rehacer se va (allá no existe)
   · el encabezado muestra si está en vivo
+
+Lo que sigue pasando por save() —y por lo tanto sólo avisa— es crear,
+eliminar y reordenar.
 
 Si el panel cambió de forma y algún parche ya no aplica, lo dice y no
 escribe nada. Nunca deja un panel a medio conectar.
@@ -59,6 +64,21 @@ function marcarSincronizado(){
   el.textContent='En vivo · '+h;
 }
 
+// Guarda un cambio suelto. Pinta primero y confirma después: el tablero
+// se ve al momento y la base se pone al día en segundo plano. Si el
+// servidor dice que no, 'revertir' regresa la pantalla como estaba y te
+// dice por qué — nunca te deja creyendo que se guardó.
+function guardar(accion, cuerpo, revertir){
+  renderAll();
+  apiPost('accion', Object.assign({accion:accion}, cuerpo))
+    .then(o=>{ if(o&&o.v)versionActual=o.v; marcarSincronizado(); })
+    .catch(e=>{
+      if(revertir)revertir();
+      renderAll();
+      aviso('No se guardó: '+e.message,false);
+    });
+}
+
 async function load(){
   if(cargando)return;
   cargando=true;
@@ -82,12 +102,12 @@ async function load(){
   renderAll();
 }
 
-// Lo que todavía no escribe en la base pasa por aquí: avisa y recarga,
+// Crear, eliminar y reordenar todavía pasan por aquí: avisa y recarga,
 // para no dejarte creyendo que se guardó.
 function save(){
   pushHist();
   renderAll();
-  aviso('Eso todavía no se guarda desde el panel. Por ahora, pídeselo al asistente por WhatsApp.',false);
+  aviso('Crear y eliminar todavía no se guardan desde el panel. Por ahora, pídeselo al asistente por WhatsApp.',false);
   setTimeout(load,400);
 }
 
@@ -121,7 +141,8 @@ MANEJADOR_ETAPA = '''  }else if(act==='stage'&&proy){
     const si=+btn.dataset.si, previo=it.stages[si];
     it.stages[si]=!previo; renderAll();          // se pinta ya, se confirma después
     apiPost('etapa',{mueble_id:it.id,etapa:CLAVES[si],hecho:it.stages[si]})
-      .then(r=>{ it.terminado=!!r.terminado; renderAll(); marcarSincronizado(); })
+      .then(r=>{ it.terminado=!!r.terminado; if(r.v)versionActual=r.v;
+                 renderAll(); marcarSincronizado(); })
       .catch(e=>{ it.stages[si]=previo; renderAll();
                   aviso('No se guardó: '+e.message,false); });'''
 
@@ -136,9 +157,114 @@ MANEJADOR_TERMINADO = '''  }else if(act==='terminado'&&proy){
     if(it.terminado)it.stages=[true,true,true,true,true];
     renderAll();
     apiPost('terminado',{mueble_id:it.id,terminado:it.terminado})
-      .then(()=>{ marcarSincronizado(); })
+      .then(r=>{ if(r&&r.v)versionActual=r.v; marcarSincronizado(); })
       .catch(e=>{ it.terminado=previo; it.stages=etapasPrevias; renderAll();
                   aviso('No se guardó: '+e.message,false); });'''
+
+
+# ---------------------------------------------------------------------
+# Edición (tanda 1). Cada par es el renglón original del panel y el que
+# lo sustituye. Son reemplazos cortos y únicos a propósito: si el panel
+# cambió de forma, falla justo el que ya no aplica y se ve cuál.
+# ---------------------------------------------------------------------
+EDICIONES: list[tuple[str, str, str]] = [
+    (
+        "editar proyecto",
+        "      onOk:([v,f])=>{if(!v)return;proy.nombre=v;proy.fechaEntrega=f||'';save();renderAll();}});",
+        """      onOk:([v,f])=>{
+        if(!v)return;
+        const antes={n:proy.nombre,f:proy.fechaEntrega};
+        proy.nombre=v; proy.fechaEntrega=f||'';
+        guardar('editar_obra',{obra_id:proy.id,cambios:{nombre:v,fecha_entrega:f||null}},
+                ()=>{proy.nombre=antes.n;proy.fechaEntrega=antes.f});
+      }});""",
+    ),
+    (
+        "fecha del mueble",
+        "      onOk:([v])=>{it.fecha=v||'';save();renderAll();}});",
+        """      onOk:([v])=>{
+        const antes=it.fecha;
+        it.fecha=v||'';
+        guardar('fecha',{mueble_id:it.id,fecha:v||null},()=>{it.fecha=antes});
+      }});""",
+    ),
+    (
+        "renombrar mueble",
+        "      onOk:([v])=>{if(!v)return;it.nombre=v;save();renderAll();}});",
+        """      onOk:([v])=>{
+        if(!v||v===it.nombre)return;
+        const antes=it.nombre;
+        it.nombre=v;
+        guardar('renombrar_mueble',{mueble_id:it.id,nombre:v},()=>{it.nombre=antes});
+      }});""",
+    ),
+    (
+        "renombrar grupo",
+        """      onOk:([v])=>{
+        if(!v)return;
+        proy.items.forEach(it=>{if(it.grupo===g)it.grupo=v});
+        save();renderAll();
+      }});""",
+        """      onOk:([v])=>{
+        if(!v||v===g)return;
+        const tocados=proy.items.filter(it=>it.grupo===g);
+        tocados.forEach(it=>{it.grupo=v});
+        guardar('renombrar_grupo',{obra_id:proy.id,grupo:g,nuevo:v},
+                ()=>{tocados.forEach(it=>{it.grupo=g})});
+      }});""",
+    ),
+    (
+        "nota del mueble",
+        "      onOk:([v])=>{it.nota=v;save();renderAll();}});",
+        """      onOk:([v])=>{
+        const antes=it.nota;
+        it.nota=v;
+        guardar('nota',{mueble_id:it.id,nota:v},()=>{it.nota=antes});
+      }});""",
+    ),
+    (
+        "palomear pendiente de obra",
+        """    const t=o&&o.tasks.find(x=>x.id===btn.dataset.tid);
+    if(t){t.done=!t.done;save();renderAll();}""",
+        """    const t=o&&o.tasks.find(x=>x.id===btn.dataset.tid);
+    if(!t)return;
+    t.done=!t.done;
+    guardar('pendiente',{pendiente_id:t.id,hecho:t.done},()=>{t.done=!t.done});""",
+    ),
+    (
+        "palomear pendiente de oficina",
+        """  }else if(act==='of-toggle'){
+    const o=oficina.find(x=>x.id===btn.dataset.oid);
+    if(o){o.done=!o.done;save();renderAll();}""",
+        """  }else if(act==='of-toggle'){
+    const o=oficina.find(x=>x.id===btn.dataset.oid);
+    if(!o)return;
+    o.done=!o.done;
+    guardar('pendiente',{pendiente_id:o.id,hecho:o.done},()=>{o.done=!o.done});""",
+    ),
+    (
+        "nota de la cotización",
+        "      onOk:([v])=>{c.nota=v;save();renderAll();}});",
+        """      onOk:([v])=>{
+        const antes=c.nota;
+        c.nota=v;
+        guardar('editar_cotizacion',{cotizacion_id:c.id,cambios:{nota:v}},()=>{c.nota=antes});
+      }});""",
+    ),
+    (
+        "estado de la cotización",
+        """  const c=cotizaciones.find(x=>x.id===sel.dataset.cid);
+  if(c){c.estado=sel.value;save();renderAll();}
+});""",
+        """  const c=cotizaciones.find(x=>x.id===sel.dataset.cid);
+  if(!c)return;
+  const antes=c.estado;
+  c.estado=sel.value;
+  guardar('editar_cotizacion',{cotizacion_id:c.id,cambios:{estado:sel.value}},
+          ()=>{c.estado=antes});
+});""",
+    ),
+]
 
 MANEJADOR_UNDO = '''  if(act==='undo'){
     apiPost('deshacer',{})
@@ -164,9 +290,18 @@ def cortar(s, ini, fin, nuevo, etiqueta, fallos):
     return s[:a] + nuevo + s[b:]
 
 
-def reemplazar(s, viejo, nuevo, etiqueta, fallos, veces=1):
-    if viejo not in s:
+def reemplazar(s, viejo, nuevo, etiqueta, fallos, veces=1, unico=False):
+    """Sustituye un texto exacto. Si no está, lo anota como fallo.
+
+    Con unico=True exige que aparezca una sola vez: así un parche nunca
+    se aplica al renglón equivocado por parecerse a otro.
+    """
+    n = s.count(viejo)
+    if n == 0:
         fallos.append(etiqueta)
+        return s
+    if unico and n > 1:
+        fallos.append(f"{etiqueta} (aparece {n} veces, no sé cuál es)")
         return s
     return s.replace(viejo, nuevo, veces)
 
@@ -192,6 +327,10 @@ def conectar(html: str) -> tuple[str, list[str]]:
                MANEJADOR_ETAPA + "\n", "manejador de etapas", fallos)
     s = cortar(s, "  }else if(act==='terminado'&&proy){", "  }else if(act==='ren-item'",
                MANEJADOR_TERMINADO + "\n", "manejador de Terminado", fallos)
+
+    # 4b. los botones de edición escriben en la base
+    for etiqueta, viejo, nuevo in EDICIONES:
+        s = reemplazar(s, viejo, nuevo, etiqueta, fallos, unico=True)
 
     # 5. Deshacer al servidor, Rehacer fuera
     s = reemplazar(s,

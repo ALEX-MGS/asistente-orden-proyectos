@@ -775,6 +775,21 @@ function marcarSincronizado(){
   el.textContent='En vivo · '+h;
 }
 
+// Guarda un cambio suelto. Pinta primero y confirma después: el tablero
+// se ve al momento y la base se pone al día en segundo plano. Si el
+// servidor dice que no, 'revertir' regresa la pantalla como estaba y te
+// dice por qué — nunca te deja creyendo que se guardó.
+function guardar(accion, cuerpo, revertir){
+  renderAll();
+  apiPost('accion', Object.assign({accion:accion}, cuerpo))
+    .then(o=>{ if(o&&o.v)versionActual=o.v; marcarSincronizado(); })
+    .catch(e=>{
+      if(revertir)revertir();
+      renderAll();
+      aviso('No se guardó: '+e.message,false);
+    });
+}
+
 async function load(){
   if(cargando)return;
   cargando=true;
@@ -798,12 +813,12 @@ async function load(){
   renderAll();
 }
 
-// Lo que todavía no escribe en la base pasa por aquí: avisa y recarga,
+// Crear, eliminar y reordenar todavía pasan por aquí: avisa y recarga,
 // para no dejarte creyendo que se guardó.
 function save(){
   pushHist();
   renderAll();
-  aviso('Eso todavía no se guarda desde el panel. Por ahora, pídeselo al asistente por WhatsApp.',false);
+  aviso('Crear y eliminar todavía no se guardan desde el panel. Por ahora, pídeselo al asistente por WhatsApp.',false);
   setTimeout(load,400);
 }
 
@@ -1652,7 +1667,13 @@ document.addEventListener('click',e=>{
       }});
   }else if(act==='renombrar'&&proy){
     openEditor({title:'Editar proyecto',fields:[{label:'Nombre',placeholder:'Nombre',value:proy.nombre},{label:'Fecha de entrega (deja vacío para quitarla)',type:'date',value:proy.fechaEntrega||''}],okText:'Guardar',
-      onOk:([v,f])=>{if(!v)return;proy.nombre=v;proy.fechaEntrega=f||'';save();renderAll();}});
+      onOk:([v,f])=>{
+        if(!v)return;
+        const antes={n:proy.nombre,f:proy.fechaEntrega};
+        proy.nombre=v; proy.fechaEntrega=f||'';
+        guardar('editar_obra',{obra_id:proy.id,cambios:{nombre:v,fecha_entrega:f||null}},
+                ()=>{proy.nombre=antes.n;proy.fechaEntrega=antes.f});
+      }});
   }else if(act==='add-item'&&proy){
     const grupos=[...new Set(proy.items.map(i=>i.grupo).filter(Boolean))];
     openEditor({title:'Agregar mueble',
@@ -1673,7 +1694,11 @@ document.addEventListener('click',e=>{
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
     openEditor({title:'Fecha de entrega — '+it.nombre,fields:[{label:'Deja vacío para quitarla',type:'date',value:it.fecha||''}],okText:'Guardar',
-      onOk:([v])=>{it.fecha=v||'';save();renderAll();}});
+      onOk:([v])=>{
+        const antes=it.fecha;
+        it.fecha=v||'';
+        guardar('fecha',{mueble_id:it.id,fecha:v||null},()=>{it.fecha=antes});
+      }});
   }else if(act==='terminado'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
@@ -1685,21 +1710,28 @@ document.addEventListener('click',e=>{
     if(it.terminado)it.stages=[true,true,true,true,true];
     renderAll();
     apiPost('terminado',{mueble_id:it.id,terminado:it.terminado})
-      .then(()=>{ marcarSincronizado(); })
+      .then(r=>{ if(r&&r.v)versionActual=r.v; marcarSincronizado(); })
       .catch(e=>{ it.terminado=previo; it.stages=etapasPrevias; renderAll();
                   aviso('No se guardó: '+e.message,false); });
   }else if(act==='ren-item'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
     openEditor({title:'Renombrar mueble',fields:[{placeholder:'Nombre del mueble',value:it.nombre}],okText:'Guardar',
-      onOk:([v])=>{if(!v)return;it.nombre=v;save();renderAll();}});
+      onOk:([v])=>{
+        if(!v||v===it.nombre)return;
+        const antes=it.nombre;
+        it.nombre=v;
+        guardar('renombrar_mueble',{mueble_id:it.id,nombre:v},()=>{it.nombre=antes});
+      }});
   }else if(act==='ren-grupo'&&proy){
     const g=btn.dataset.g;
     openEditor({title:'Renombrar habitación / grupo',text:'Se actualizará en todos los muebles de "'+g+'".',fields:[{placeholder:'Nuevo nombre',value:g}],okText:'Guardar',
       onOk:([v])=>{
-        if(!v)return;
-        proy.items.forEach(it=>{if(it.grupo===g)it.grupo=v});
-        save();renderAll();
+        if(!v||v===g)return;
+        const tocados=proy.items.filter(it=>it.grupo===g);
+        tocados.forEach(it=>{it.grupo=v});
+        guardar('renombrar_grupo',{obra_id:proy.id,grupo:g,nuevo:v},
+                ()=>{tocados.forEach(it=>{it.grupo=g})});
       }});
   }else if(act==='del-grupo'&&proy){
     const g=btn.dataset.g;
@@ -1722,18 +1754,25 @@ document.addEventListener('click',e=>{
     const si=+btn.dataset.si, previo=it.stages[si];
     it.stages[si]=!previo; renderAll();          // se pinta ya, se confirma después
     apiPost('etapa',{mueble_id:it.id,etapa:CLAVES[si],hecho:it.stages[si]})
-      .then(r=>{ it.terminado=!!r.terminado; renderAll(); marcarSincronizado(); })
+      .then(r=>{ it.terminado=!!r.terminado; if(r.v)versionActual=r.v;
+                 renderAll(); marcarSincronizado(); })
       .catch(e=>{ it.stages[si]=previo; renderAll();
                   aviso('No se guardó: '+e.message,false); });
   }else if(act==='nota'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
     openEditor({title:'Nota para '+it.nombre,fields:[{placeholder:'Escribe la nota',value:it.nota||''}],okText:'Guardar',
-      onOk:([v])=>{it.nota=v;save();renderAll();}});
+      onOk:([v])=>{
+        const antes=it.nota;
+        it.nota=v;
+        guardar('nota',{mueble_id:it.id,nota:v},()=>{it.nota=antes});
+      }});
   }else if(act==='task'){
     const o=pends.find(x=>x.id===btn.dataset.oid);
     const t=o&&o.tasks.find(x=>x.id===btn.dataset.tid);
-    if(t){t.done=!t.done;save();renderAll();}
+    if(!t)return;
+    t.done=!t.done;
+    guardar('pendiente',{pendiente_id:t.id,hecho:t.done},()=>{t.done=!t.done});
   }else if(act==='addtask'){
     const o=pends.find(x=>x.id===btn.dataset.oid);
     if(!o)return;
@@ -1767,7 +1806,11 @@ document.addEventListener('click',e=>{
     const c=cotizaciones.find(x=>x.id===btn.dataset.cid);
     if(!c)return;
     openEditor({title:'Nota — '+c.cliente,fields:[{placeholder:'Escribe la nota',value:c.nota||''}],okText:'Guardar',
-      onOk:([v])=>{c.nota=v;save();renderAll();}});
+      onOk:([v])=>{
+        const antes=c.nota;
+        c.nota=v;
+        guardar('editar_cotizacion',{cotizacion_id:c.id,cambios:{nota:v}},()=>{c.nota=antes});
+      }});
   }else if(act==='cot-del'){
     const c=cotizaciones.find(x=>x.id===btn.dataset.cid);
     if(!c)return;
@@ -1781,7 +1824,9 @@ document.addEventListener('click',e=>{
       }});
   }else if(act==='of-toggle'){
     const o=oficina.find(x=>x.id===btn.dataset.oid);
-    if(o){o.done=!o.done;save();renderAll();}
+    if(!o)return;
+    o.done=!o.done;
+    guardar('pendiente',{pendiente_id:o.id,hecho:o.done},()=>{o.done=!o.done});
   }else if(act==='of-del'){
     const o=oficina.find(x=>x.id===btn.dataset.oid);
     if(!o)return;
@@ -1794,7 +1839,11 @@ document.addEventListener('change',e=>{
   const sel=e.target.closest('[data-act="cot-estado"]');
   if(!sel)return;
   const c=cotizaciones.find(x=>x.id===sel.dataset.cid);
-  if(c){c.estado=sel.value;save();renderAll();}
+  if(!c)return;
+  const antes=c.estado;
+  c.estado=sel.value;
+  guardar('editar_cotizacion',{cotizacion_id:c.id,cambios:{estado:sel.value}},
+          ()=>{c.estado=antes});
 });
 
 document.addEventListener('keydown',e=>{
