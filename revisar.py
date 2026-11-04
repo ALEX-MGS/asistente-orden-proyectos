@@ -21,6 +21,8 @@ ESPERADAS = [
     # altas desde el panel (11_crear.sql)
     "crear_obra", "agregar_mueble", "agregar_pendiente_en",
     "pendiente_de_oficina", "crear_cotizacion",
+    # un link por persona (12_vista_y_tokens.sql)
+    "persona_por_token", "links_del_panel", "renovar_token",
 ]
 
 

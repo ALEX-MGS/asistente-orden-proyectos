@@ -768,11 +768,15 @@ async function apiPost(ruta, cuerpo){
   return o;
 }
 
+// Quién entró con este link. Se enseña en el encabezado para que se vea
+// de un golpe, y es el mismo nombre que queda en la bitácora.
+let quienSoy='';
+
 function marcarSincronizado(){
   const el=$('sello-sync');
   if(!el)return;
   const h=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  el.textContent='En vivo · '+h;
+  el.textContent='En vivo'+(quienSoy?' · '+quienSoy:'')+' · '+h;
 }
 
 // Guarda un cambio suelto. Pinta primero y confirma después: el tablero
@@ -830,6 +834,7 @@ async function load(){
     cotizaciones=o.cotizaciones||[];
     oficina=o.oficina||[];
     versionActual=o.v||null;
+    if(o.yo&&o.yo.nombre)quienSoy=o.yo.nombre;
     marcarSincronizado();
   }catch(e){
     aviso('No se pudo cargar el tablero: '+e.message,false);

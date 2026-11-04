@@ -31,13 +31,23 @@ def version() -> str:
     return f"{b[0]['id'] if b else 0}|{m[0]['updated_at'] if m else ''}"
 
 
+def palomitas(m: dict) -> list[bool]:
+    """Las cinco etapas del mueble, en el orden del tablero.
+
+    Vienen dentro de v_muebles. Antes se traían en su propia consulta,
+    cinco filas por mueble, y Supabase corta en 1000 filas sin avisar:
+    a los 200 muebles el tablero habría empezado a mentir en silencio.
+    """
+    v = m.get("etapas") or []
+    return [bool(v[i]) if i < len(v) else False for i in range(5)]
+
+
 def estado() -> dict:
     cli = db.db()
 
     muebles = (cli.table("v_muebles").select("*")
                .eq("archivado", False).order("obra").order("orden")
                .execute().data)
-    etapas = cli.table("mueble_etapas").select("mueble_id, etapa_id, hecho").execute().data
     obras = (cli.table("obras")
              .select("id, nombre, tipo, fecha_entrega, orden, es_proyecto")
              .execute().data)
@@ -46,14 +56,6 @@ def estado() -> dict:
     cotiz = (cli.table("cotizaciones")
              .select("id, cliente, concepto, monto, fecha, estado, nota")
              .order("fecha", desc=True).execute().data)
-
-    # --- etapas: de filas a el arreglo de 5 booleanos que espera el panel
-    stages: dict[str, list[bool]] = {}
-    for e in etapas:
-        stages.setdefault(e["mueble_id"], [False] * 5)
-        i = int(e["etapa_id"]) - 1
-        if 0 <= i < 5:
-            stages[e["mueble_id"]][i] = bool(e["hecho"])
 
     por_id = {o["id"]: o for o in obras}
 
@@ -73,7 +75,7 @@ def estado() -> dict:
             "id": m["id"],
             "nombre": m["nombre"],
             "grupo": m.get("grupo") or "",
-            "stages": stages.get(m["id"], [False] * 5),
+            "stages": palomitas(m),
             "nota": m.get("nota") or "",
             "fecha": m.get("fecha_entrega") or "",
             "terminado": bool(m.get("terminado")),

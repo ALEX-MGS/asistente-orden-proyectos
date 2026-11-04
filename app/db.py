@@ -138,6 +138,13 @@ def deshacer(persona):
 
 # --- personas y mensajes ---------------------------------------------
 
+def persona_por_token(token: str) -> dict | None:
+    """El candado del panel. Un token que no esté en `personas` no entra,
+    y desactivar a alguien le cierra el panel sin tocar a los demás."""
+    r = _rpc("persona_por_token", p_token=token)
+    return r[0] if r else None
+
+
 def persona_por_telefono(telefono: str) -> dict | None:
     """El candado. Un número que no esté en `personas` no existe."""
     r = (db().table("personas").select("*")

@@ -6,6 +6,7 @@ eso cuando encadena varias herramientas, así que contestamos vacío de
 inmediato y mandamos la respuesta real por la API de Twilio.
 """
 import logging
+import time
 from datetime import datetime
 
 from pathlib import Path
@@ -60,14 +61,64 @@ def favicon():
     return Response(status_code=204)
 
 
-def con_token(k: str) -> bool:
-    return not config.TABLERO_TOKEN or k == config.TABLERO_TOKEN
+# ---------------------------------------------------------------------
+# Quién trae el link.
+#
+# Cada persona de `personas` tiene su propio token (12_vista_y_tokens.sql),
+# así que la bitácora puede decir quién hizo cada cambio y un link se
+# revoca sin tocar los demás. TABLERO_TOKEN sigue sirviendo y se atribuye
+# al admin: los links que ya repartiste no se rompen.
+# ---------------------------------------------------------------------
+_CACHE: dict[str, tuple[float, dict | None]] = {}
+CACHE_SEG = 60
+
+
+def _admin() -> dict | None:
+    r = (db.db().table("personas").select("id, nombre, rol")
+         .eq("rol", "admin").limit(1).execute().data)
+    return r[0] if r else None
+
+
+def _resolver(k: str) -> dict | None:
+    # Sin link no se entra, pase lo que pase con la configuración. Antes
+    # un TABLERO_TOKEN vacío abría el panel a quien pasara por la URL, y
+    # eso es justo lo que uno borra "por limpiar" el día que ya reparte
+    # links por persona.
+    if not k:
+        if not config.TABLERO_TOKEN:
+            log.warning("Alguien abrió el panel sin ?k=. Saca los links con "
+                        "`python links.py` y entra con el tuyo.")
+        return None
+    if config.TABLERO_TOKEN and k == config.TABLERO_TOKEN:
+        return _admin()
+    try:
+        return db.persona_por_token(k)
+    except Exception:
+        log.exception("no se pudo verificar el token")
+        return None
+
+
+def quien(k: str) -> dict | None:
+    """La persona detrás de ese link, o None si el link no sirve.
+
+    Se guarda en memoria un rato: /api/version se consulta cada ocho
+    segundos por cada navegador abierto y no vale la pena preguntarle a
+    la base quién es en cada una.
+    """
+    k = (k or "").strip()
+    ahora = time.monotonic()
+    guardado = _CACHE.get(k)
+    if guardado and ahora - guardado[0] < CACHE_SEG:
+        return guardado[1]
+    p = _resolver(k)
+    _CACHE[k] = (ahora, p)
+    return p
 
 
 @app.get("/panel")
 def panel(k: str = ""):
     """El panel de siempre, pero leyendo de la base."""
-    if not con_token(k):
+    if not quien(k):
         return PlainTextResponse("No autorizado", status_code=403)
     return FileResponse(PANEL, media_type="text/html")
 
@@ -75,10 +126,15 @@ def panel(k: str = ""):
 @app.get("/api/estado")
 def api_estado(k: str = ""):
     """El estado completo, en la forma que el panel ya espera."""
-    if not con_token(k):
+    p = quien(k)
+    if not p:
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
-        return JSONResponse(api.estado())
+        datos = api.estado()
+        # El panel lo enseña en el encabezado: así se ve de un golpe con
+        # qué link estás entrando, y si repartiste el equivocado se nota.
+        datos["yo"] = {"nombre": p.get("nombre") or "", "rol": p.get("rol") or ""}
+        return JSONResponse(datos)
     except Exception as e:
         log.exception("falló /api/estado")
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
@@ -95,16 +151,6 @@ def marca_panel(accion: str) -> str:
     return f"panel · {accion} · {datetime.now().isoformat(timespec='milliseconds')}"
 
 
-def quien_edita() -> str | None:
-    """A quién se le atribuyen los cambios hechos desde el panel.
-
-    El panel todavía no tiene login: quien trae el token puede editar. Se
-    atribuye al admin para que la bitácora y 'deshacer' funcionen igual
-    que por WhatsApp. Cuando haya login, esto sale de la sesión.
-    """
-    r = (db.db().table("personas").select("id")
-         .eq("rol", "admin").limit(1).execute().data)
-    return r[0]["id"] if r else None
 
 
 def motivo(e: Exception) -> str:
@@ -170,7 +216,8 @@ ACCIONES: dict[str, tuple] = {
 @app.post("/api/accion")
 def api_accion(k: str = "", cuerpo: dict = Body(...)):
     """Una edición del panel."""
-    if not con_token(k):
+    p = quien(k)
+    if not p:
         return JSONResponse({"error": "no autorizado"}, status_code=403)
 
     nombre = (cuerpo or {}).get("accion") or ""
@@ -187,7 +234,7 @@ def api_accion(k: str = "", cuerpo: dict = Body(...)):
 
     try:
         resultado = funcion(*(cuerpo[c] for c in claves),
-                            quien_edita(), marca_panel(nombre))
+                            p["id"], marca_panel(nombre))
     except Exception as e:
         log.exception("falló /api/accion %s", nombre)
         return JSONResponse({"error": motivo(e)}, status_code=400)
@@ -198,7 +245,7 @@ def api_accion(k: str = "", cuerpo: dict = Body(...)):
 @app.get("/api/version")
 def api_version(k: str = ""):
     """Sólo la huella. El panel la consulta seguido; pesa unos bytes."""
-    if not con_token(k):
+    if not quien(k):
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
         return JSONResponse({"v": api.version()})
@@ -210,12 +257,13 @@ def api_version(k: str = ""):
 @app.post("/api/etapa")
 def api_etapa(k: str = "", cuerpo: dict = Body(...)):
     """Palomear o despalomear una etapa desde el panel."""
-    if not con_token(k):
+    p = quien(k)
+    if not p:
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
         return JSONResponse(con_version(db.actualizar_etapa(
             cuerpo["mueble_id"], cuerpo["etapa"], bool(cuerpo.get("hecho", True)),
-            quien_edita(), marca_panel("etapa"))))
+            p["id"], marca_panel("etapa"))))
     except Exception as e:
         log.exception("falló /api/etapa")
         return JSONResponse({"error": motivo(e)}, status_code=400)
@@ -224,12 +272,13 @@ def api_etapa(k: str = "", cuerpo: dict = Body(...)):
 @app.post("/api/terminado")
 def api_terminado(k: str = "", cuerpo: dict = Body(...)):
     """Marcar o desmarcar la palomita de Terminado desde el panel."""
-    if not con_token(k):
+    p = quien(k)
+    if not p:
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
         return JSONResponse(con_version(db.marcar_terminado(
             cuerpo["mueble_id"], bool(cuerpo.get("terminado", True)),
-            quien_edita(), marca_panel("terminado"))))
+            p["id"], marca_panel("terminado"))))
     except Exception as e:
         log.exception("falló /api/terminado")
         return JSONResponse({"error": motivo(e)}, status_code=400)
@@ -238,10 +287,11 @@ def api_terminado(k: str = "", cuerpo: dict = Body(...)):
 @app.post("/api/deshacer")
 def api_deshacer(k: str = ""):
     """Deshacer el último cambio, igual que por WhatsApp."""
-    if not con_token(k):
+    p = quien(k)
+    if not p:
         return JSONResponse({"error": "no autorizado"}, status_code=403)
     try:
-        return JSONResponse(db.deshacer(quien_edita()))
+        return JSONResponse(db.deshacer(p["id"]))
     except Exception as e:
         log.exception("falló /api/deshacer")
         return JSONResponse({"error": motivo(e)}, status_code=400)
@@ -250,7 +300,7 @@ def api_deshacer(k: str = ""):
 @app.get("/tablero", response_class=HTMLResponse)
 def ver_tablero(k: str = ""):
     """Tablero de solo lectura. Se edita por WhatsApp, aquí sólo se mira."""
-    if config.TABLERO_TOKEN and k != config.TABLERO_TOKEN:
+    if not quien(k):
         return HTMLResponse("No autorizado", status_code=403)
     try:
         return HTMLResponse(tablero.render(tablero.datos()))
