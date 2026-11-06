@@ -210,6 +210,15 @@ ACCIONES: dict[str, tuple] = {
     "crear_obra_pendiente": (db.agregar_pendiente, ("obra", "texto")),
     "crear_oficina":     (db.pendiente_de_oficina, ("texto",)),
     "crear_cotizacion":  (db.crear_cotizacion,  ("cliente", "concepto", "monto", "fecha")),
+
+    # archivar y reordenar (13_archivar.sql). "Eliminar" en el tablero
+    # archiva: la fila se queda en la base y Deshacer la regresa.
+    "archivar_mueble":     (db.archivar_mueble,     ("mueble_id", "archivado")),
+    "archivar_grupo":      (db.archivar_grupo,      ("obra_id", "grupo")),
+    "archivar_obra":       (db.archivar_obra,       ("obra_id", "archivado")),
+    "archivar_pendiente":  (db.archivar_pendiente,  ("pendiente_id", "archivado")),
+    "archivar_cotizacion": (db.archivar_cotizacion, ("cotizacion_id", "archivado")),
+    "acomodar":            (db.acomodar_muebles,    ("obra_id", "muebles")),
 }
 
 
@@ -282,6 +291,34 @@ def api_terminado(k: str = "", cuerpo: dict = Body(...)):
     except Exception as e:
         log.exception("falló /api/terminado")
         return JSONResponse({"error": motivo(e)}, status_code=400)
+
+
+@app.post("/api/dictado")
+def api_dictado(k: str = "", cuerpo: dict = Body(...)):
+    """El dictado del panel, atendido por el mismo asistente de WhatsApp.
+
+    Antes el botón del micrófono le hablaba a la API de Anthropic desde
+    el navegador, sin llave: eso sólo funcionaba dentro de Claude, y en
+    Railway fallaba siempre. Ahora usa el agente del servidor, con sus
+    mismas herramientas y su mismo rastro en bitácora, así que lo que
+    dictes aquí se deshace igual que lo que mandas por WhatsApp.
+    """
+    p = quien(k)
+    if not p:
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+
+    texto = ((cuerpo or {}).get("texto") or "").strip()
+    if not texto:
+        return JSONResponse({"error": "no mandaste nada"}, status_code=400)
+
+    try:
+        respuesta = agente.responder(texto, p, [])
+    except Exception as e:
+        log.exception("falló /api/dictado")
+        return JSONResponse({"error": motivo(e)}, status_code=400)
+
+    return JSONResponse({"ok": True, "respuesta": respuesta,
+                         **con_version({})})
 
 
 @app.post("/api/deshacer")

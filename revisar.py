@@ -23,6 +23,9 @@ ESPERADAS = [
     "pendiente_de_oficina", "crear_cotizacion",
     # un link por persona (12_vista_y_tokens.sql)
     "persona_por_token", "links_del_panel", "renovar_token",
+    # archivar y reordenar (13_archivar.sql)
+    "archivar_mueble", "archivar_grupo", "archivar_obra",
+    "archivar_pendiente", "archivar_cotizacion", "acomodar_muebles",
 ]
 
 

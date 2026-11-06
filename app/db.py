@@ -132,6 +132,38 @@ def cerrar_pendiente(pendiente_id, hecho=True, persona=None, mensaje=None):
                 p_persona=persona, p_mensaje=mensaje)
 
 
+def archivar_mueble(mueble_id, archivado=True, persona=None, mensaje=None):
+    """Lo que el tablero llama "eliminar": la fila se queda, deja de verse."""
+    return _rpc("archivar_mueble", p_mueble_id=mueble_id, p_archivado=bool(archivado),
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def archivar_grupo(obra_id, grupo, persona=None, mensaje=None):
+    return _rpc("archivar_grupo", p_obra_id=obra_id, p_grupo=grupo or "",
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def archivar_obra(obra_id, archivado=True, persona=None, mensaje=None):
+    return _rpc("archivar_obra", p_obra_id=obra_id, p_archivado=bool(archivado),
+                p_persona=persona, p_mensaje=mensaje)
+
+
+def archivar_pendiente(pendiente_id, archivado=True, persona=None, mensaje=None):
+    return _rpc("archivar_pendiente", p_pendiente_id=pendiente_id,
+                p_archivado=bool(archivado), p_persona=persona, p_mensaje=mensaje)
+
+
+def archivar_cotizacion(cotizacion_id, archivado=True, persona=None, mensaje=None):
+    return _rpc("archivar_cotizacion", p_cotizacion_id=cotizacion_id,
+                p_archivado=bool(archivado), p_persona=persona, p_mensaje=mensaje)
+
+
+def acomodar_muebles(obra_id, muebles: list, persona=None, mensaje=None):
+    """El orden nuevo completo de una obra: [{id, grupo}, ...]."""
+    return _rpc("acomodar_muebles", p_obra_id=obra_id, p_muebles=muebles,
+                p_persona=persona, p_mensaje=mensaje)
+
+
 def deshacer(persona):
     return _rpc("deshacer", p_persona=persona)
 

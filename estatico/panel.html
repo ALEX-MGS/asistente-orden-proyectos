@@ -362,7 +362,6 @@ tr.drag-over-item td{box-shadow:inset 0 2px 0 #1D9E75}
     <button class="ico" id="btn-redo" data-act="redo" title="Rehacer (Ctrl+Y)">↷</button>
     <button class="ico dict" id="btn-dict-toggle" data-act="dict-rapido" title="Dictado rápido (Ctrl+K)">🎙</button>
     <button class="ico" id="btn-mas" data-act="menu" title="Más opciones">⋯</button>
-    <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </div>
 </div>
 <div id="io-msg" class="hidden" style="margin-bottom:12px"></div>
@@ -628,22 +627,46 @@ function setupDrag(p){
   });
 }
 
+// El orden vive en la base: se manda la lista completa de la obra tal
+// como quedó, con el grupo de cada mueble, porque al soltar uno sobre
+// otro hereda su habitación y las dos cosas cambian juntas.
+function guardarOrden(p,antes){
+  if(p.items.some(i=>String(i.id).startsWith('tmp'))){
+    aviso('Espera un segundo: todavía se está guardando un mueble nuevo.',false);
+    restaurarOrden(p,antes);renderAll();return;
+  }
+  guardar('acomodar',
+    {obra_id:p.id,muebles:p.items.map(i=>({id:i.id,grupo:i.grupo||null}))},
+    ()=>restaurarOrden(p,antes));
+}
+
+function fotoOrden(p){return p.items.map(i=>({id:i.id,grupo:i.grupo}))}
+
+function restaurarOrden(p,antes){
+  const porId={};
+  p.items.forEach(i=>{porId[i.id]=i});
+  p.items=antes.map(a=>{const it=porId[a.id]; if(it)it.grupo=a.grupo; return it})
+               .filter(Boolean);
+}
+
 function moverItem(p,idArrastrado,idDestino){
   if(idArrastrado===idDestino)return;
   const from=p.items.findIndex(i=>i.id===idArrastrado);
   const to=p.items.findIndex(i=>i.id===idDestino);
   if(from<0||to<0)return;
+  const antes=fotoOrden(p);
   const [m]=p.items.splice(from,1);
   // al soltar sobre otro mueble, hereda su grupo
   const destino=p.items.find(i=>i.id===idDestino);
   if(destino)m.grupo=destino.grupo;
   const newTo=p.items.findIndex(i=>i.id===idDestino);
   p.items.splice(newTo,0,m);
-  save();renderAll();
+  guardarOrden(p,antes);
 }
 
 function moverGrupo(p,gArrastrado,gDestino){
   if(gArrastrado===gDestino)return;
+  const antes=fotoOrden(p);
   const grupos=[...new Set(p.items.map(i=>i.grupo))];
   const bloques={};
   grupos.forEach(g=>bloques[g]=p.items.filter(i=>i.grupo===g));
@@ -651,7 +674,7 @@ function moverGrupo(p,gArrastrado,gDestino){
   const idx=orden.indexOf(gDestino);
   orden.splice(idx,0,gArrastrado);
   p.items=orden.flatMap(g=>bloques[g]);
-  save();renderAll();
+  guardarOrden(p,antes);
 }
 
 function renderResumen(){
@@ -943,32 +966,7 @@ function exportarCSV(){
       csvEsc(''),csvEsc(''),csvEsc(o.done?'Hecho':'Pendiente'),csvEsc(''),csvEsc('')].join(',')+'\n';
   });
   const ok=descargar('grupo-morales-'+hoyStamp()+'.csv',f,'text/csv;charset=utf-8');
-  ioMsg(ok?'Archivo para Excel descargado. Sirve para consultar e imprimir — para restaurar usa el respaldo .json.':'No se pudo descargar el archivo.',ok);
-}
-function importarArchivo(file){
-  const lector=new FileReader();
-  lector.onload=()=>{
-    try{
-      const o=JSON.parse(lector.result);
-      if(!o.proyectos&&!o.pends)throw new Error('El archivo no tiene el formato del respaldo');
-      openEditor({title:'Restaurar respaldo',
-        text:'Se reemplazarán TODOS los datos actuales por los del archivo ('+((o.proyectos||[]).length)+' proyectos, '+((o.pends||[]).length)+' obras, '+((o.cotizaciones||[]).length)+' cotizaciones). Podrás deshacerlo con Ctrl+Z.',
-        danger:true,okText:'Restaurar',
-        onOk:()=>{
-          proyectos=o.proyectos||[];
-          pends=o.pends||[];
-          cotizaciones=o.cotizaciones||[];
-          oficina=o.oficina||[];
-          tabActiva='dash';
-          save();renderAll();
-          ioMsg('Respaldo restaurado correctamente.',true);
-        }});
-    }catch(e){
-      ioMsg('No se pudo leer el archivo: '+e.message,false);
-    }
-  };
-  lector.onerror=()=>ioMsg('No se pudo abrir el archivo.',false);
-  lector.readAsText(file);
+  ioMsg(ok?'Archivo para Excel descargado. Sirve para consultar e imprimir; el respaldo .json es el que guarda todo.':'No se pudo descargar el archivo.',ok);
 }
 
 function fmtMonto(n){
@@ -1045,7 +1043,6 @@ function renderMenu(){
     <div style="height:1px;background:#f0efe9;margin:4px 6px"></div>`:''}
     <button data-act="exportar">\u2913 Descargar respaldo (.json)</button>
     <button data-act="exportar-csv">\u2913 Descargar para Excel (.csv)</button>
-    <button data-act="importar">\u2912 Restaurar desde respaldo</button>
   </div>`;
 }
 
@@ -1665,7 +1662,6 @@ document.addEventListener('click',e=>{
   }
   if(act==='exportar'){exportarJSON();return}
   if(act==='exportar-csv'){exportarCSV();return}
-  if(act==='importar'){$('file-import').click();return}
   if(act==='undo'){
     apiPost('deshacer',{})
       .then(r=>{
@@ -1694,10 +1690,13 @@ document.addEventListener('click',e=>{
           np=>{proyectos=proyectos.filter(p=>p!==np);tabActiva='dash'});
       }});
   }else if(act==='eliminar-proy'&&proy){
-    openEditor({title:'Eliminar proyecto',text:'Se eliminará "'+proy.nombre+'" con todos sus muebles. No se puede deshacer.',danger:true,okText:'Eliminar',
+    openEditor({title:'Eliminar proyecto',text:'"'+proy.nombre+'" y sus '+proy.items.length+' muebles se archivan: desaparecen del tablero pero no se pierden, y Deshacer los regresa.',danger:true,okText:'Eliminar',
       onOk:()=>{
+        const antes=proyectos, tab=tabActiva;
         proyectos=proyectos.filter(p=>p.id!==proy.id);
-        tabActiva='dash';save();renderAll();
+        tabActiva='dash';
+        guardar('archivar_obra',{obra_id:proy.id,archivado:true},
+                ()=>{proyectos=antes;tabActiva=tab});
       }});
   }else if(act==='renombrar'&&proy){
     openEditor({title:'Editar proyecto',fields:[{label:'Nombre',placeholder:'Nombre',value:proy.nombre},{label:'Fecha de entrega (deja vacío para quitarla)',type:'date',value:proy.fechaEntrega||''}],okText:'Guardar',
@@ -1778,17 +1777,20 @@ document.addEventListener('click',e=>{
   }else if(act==='del-grupo'&&proy){
     const g=btn.dataset.g;
     const n=proy.items.filter(it=>it.grupo===g).length;
-    openEditor({title:'Eliminar habitación / grupo',text:'Se eliminará "'+g+'" con sus '+n+' muebles. No se puede deshacer.',danger:true,okText:'Eliminar',
+    openEditor({title:'Eliminar habitación / grupo',text:'"'+g+'" y sus '+n+' muebles se archivan. Deshacer los regresa.',danger:true,okText:'Eliminar',
       onOk:()=>{
+        const antes=proy.items;
         proy.items=proy.items.filter(it=>it.grupo!==g);
-        save();renderAll();
+        guardar('archivar_grupo',{obra_id:proy.id,grupo:g},()=>{proy.items=antes});
       }});
   }else if(act==='del-item'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
     if(!it)return;
-    openEditor({title:'Eliminar mueble',text:'¿Eliminar "'+it.nombre+'"?',danger:true,okText:'Eliminar',
+    openEditor({title:'Eliminar mueble',text:'"'+it.nombre+'" se archiva. Deshacer lo regresa.',danger:true,okText:'Eliminar',
       onOk:()=>{
-        proy.items=proy.items.filter(x=>x.id!==it.id);save();renderAll();
+        const antes=proy.items;
+        proy.items=proy.items.filter(x=>x.id!==it.id);
+        guardar('archivar_mueble',{mueble_id:it.id,archivado:true},()=>{proy.items=antes});
       }});
   }else if(act==='stage'&&proy){
     const it=proy.items.find(x=>x.id===btn.dataset.iid);
@@ -1828,9 +1830,11 @@ document.addEventListener('click',e=>{
   }else if(act==='del-obra'){
     const o=pends.find(x=>x.id===btn.dataset.oid);
     if(!o)return;
-    openEditor({title:'Eliminar obra',text:'¿Eliminar "'+o.obra+'" y sus tareas?',danger:true,okText:'Eliminar',
+    openEditor({title:'Eliminar obra',text:'"'+o.obra+'" y sus '+o.tasks.length+' tareas se archivan. Deshacer las regresa.',danger:true,okText:'Eliminar',
       onOk:()=>{
-        pends=pends.filter(x=>x.id!==o.id);save();renderAll();
+        const antes=pends;
+        pends=pends.filter(x=>x.id!==o.id);
+        guardar('archivar_obra',{obra_id:o.id,archivado:true},()=>{pends=antes});
       }});
   }else if(act==='newobra'){
     openEditor({title:'Nueva obra',
@@ -1869,8 +1873,13 @@ document.addEventListener('click',e=>{
   }else if(act==='cot-del'){
     const c=cotizaciones.find(x=>x.id===btn.dataset.cid);
     if(!c)return;
-    openEditor({title:'Eliminar cotización',text:'¿Eliminar la cotización de "'+c.cliente+'"?',danger:true,okText:'Eliminar',
-      onOk:()=>{cotizaciones=cotizaciones.filter(x=>x.id!==c.id);save();renderAll();}});
+    openEditor({title:'Eliminar cotización',text:'La cotización de "'+c.cliente+'" se archiva. Deshacer la regresa.',danger:true,okText:'Eliminar',
+      onOk:()=>{
+        const antes=cotizaciones;
+        cotizaciones=cotizaciones.filter(x=>x.id!==c.id);
+        guardar('archivar_cotizacion',{cotizacion_id:c.id,archivado:true},
+                ()=>{cotizaciones=antes});
+      }});
   }else if(act==='add-oficina'){
     openEditor({title:'Nuevo pendiente de oficina',fields:[{placeholder:'Descripción del pendiente'}],okText:'Agregar',
       onOk:([v])=>{
@@ -1887,7 +1896,9 @@ document.addEventListener('click',e=>{
   }else if(act==='of-del'){
     const o=oficina.find(x=>x.id===btn.dataset.oid);
     if(!o)return;
-    oficina=oficina.filter(x=>x.id!==o.id);save();renderAll();
+    const antes=oficina;
+    oficina=oficina.filter(x=>x.id!==o.id);
+    guardar('archivar_pendiente',{pendiente_id:o.id,archivado:true},()=>{oficina=antes});
   }
 });
 
@@ -1915,17 +1926,15 @@ document.addEventListener('keydown',e=>{
   if(k==='z'&&!e.shiftKey){e.preventDefault();undo()}
 });
 
-$('file-import').addEventListener('change',e=>{
-  const f=e.target.files&&e.target.files[0];
-  if(f)importarArchivo(f);
-  e.target.value='';
-});
-
 $('dictado').addEventListener('input',function(){
   this.style.height='auto';
   this.style.height=Math.min(this.scrollHeight,140)+'px';
 });
 
+// El dictado lo atiende el mismo asistente que contesta por WhatsApp:
+// busca, escribe en la base y deja su rastro, así que lo que dictes aquí
+// se deshace con el mismo botón. Antes esto le hablaba a la API de
+// Anthropic desde el navegador, sin llave, y en Railway nunca funcionó.
 async function procesarDictado(idTexto,idBtn,idResult){
   const ta=$(idTexto);
   const texto=ta.value.trim();
@@ -1933,96 +1942,17 @@ async function procesarDictado(idTexto,idBtn,idResult){
   const btn=$(idBtn);
   const txtOriginal=btn.textContent;
   btn.disabled=true;btn.textContent='...';
-  $(idResult).classList.add('hidden');
+  const rd=$(idResult);
+  rd.classList.add('hidden');
   try{
-    const proyState=proyectos.map(p=>
-      `PROYECTO "${p.nombre}" (id:${p.id})${p.fechaEntrega?' entrega:'+p.fechaEntrega:''}:\n`+(p.items.map(it=>
-        `  item id:${it.id} "${it.nombre}"${it.grupo?' ['+it.grupo+']':''}${it.fecha?' entrega:'+it.fecha:''}${it.terminado?' TERMINADO':''} etapas:[${it.stages.map((s,i)=>s?STAGES[i]:'').filter(Boolean).join(',')||'ninguna'}]`
-      ).join('\n')||'  (sin muebles)')
-    ).join('\n');
-    const pendState=pends.map(o=>`"${o.obra}"(id:${o.id}): ${o.tasks.map(t=>`${t.id}:"${t.text}"=${t.done?'hecha':'pendiente'}`).join(', ')||'sin tareas'}`).join('\n');
-    const sys=`Asistente de seguimiento de producción de Grupo Morales (carpintería y barniz). El usuario dicta novedades en lenguaje natural y tú devuelves SOLO un JSON válido, sin markdown ni texto extra.
-
-ESTADO ACTUAL:
-${proyState}
-
-OBRAS Y TAREAS PENDIENTES:
-${pendState}
-
-Índices de etapa: 0=Aprobado, 1=Carpintería, 2=Barniz, 3=Entrega, 4=Instalación.
-Reglas:
-- Si dice que un mueble "está en barniz" o "terminó carpintería", marca true todas las etapas hasta ese punto inclusive.
-- El avance de cada mueble son 6 pasos: las 5 etapas más un check final de "Terminado" (campo aparte). "Completado"/"listo"/"ya quedó" = las 5 etapas en true Y item_terminado en true.
-- Interpreta con sentido común nombres aproximados (ej. "el frigobar de Fátima" = "Mueble frigobar" del grupo "Habitación Fátima").
-- Si el usuario describe un PROYECTO NUEVO con sus muebles, usa new_proyectos con los items. Si menciona habitaciones o grupos, asigna el campo grupo a cada item.
-- Si algo es ambiguo entre dos items, elige el más probable y menciónalo en el resumen.
-- Hoy es ${new Date().toISOString().slice(0,10)}. Si el usuario menciona una fecha de entrega para un proyecto (absoluta o relativa como "en dos semanas"), conviértela a formato YYYY-MM-DD y usa proyecto_updates. Si la fecha es para un mueble específico, usa item_fechas. Los new_proyectos también aceptan fecha_entrega.
-
-IMPORTANTE: tu respuesta completa debe ser UN SOLO objeto JSON y nada más. Sin explicaciones antes ni después, sin bloques de código, sin repetir el objeto. Toda aclaración va dentro del campo "resumen".
-
-Responde exactamente con este formato JSON (arrays vacíos si no aplica):
-{"resumen":"frase corta de lo aplicado","item_updates":[{"item_id":"br-f1","stage_index":2,"value":true}],"item_notas":[{"item_id":"br-f1","nota":"..."}],"item_fechas":[{"item_id":"br-f1","fecha":"2026-08-20"}],"item_terminado":[{"item_id":"br-f1","value":true}],"proyecto_updates":[{"proyecto_id":"bosquereal","fecha_entrega":"2026-08-15"}],"task_updates":[{"obra_id":"x","task_id":"y","done":true}],"new_tasks":[{"obra_id":"x","text":"..."}],"new_obras":[{"nombre":"...","tasks":["..."]}],"new_items":[{"proyecto_id":"bosquereal","nombre":"...","grupo":"..."}],"new_proyectos":[{"nombre":"...","fecha_entrega":"","items":[{"nombre":"...","grupo":"..."}]}]}`;
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,system:sys,messages:[{role:'user',content:texto}]})
-    });
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
-    const raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').replace(/```json|```/g,'').trim();
-    if(!raw)throw new Error('respuesta vacía');
-    const r=extraerJSON(raw);
-    const allItems=proyectos.flatMap(p=>p.items);
-    (r.item_updates||[]).forEach(u=>{
-      const it=allItems.find(x=>x.id===u.item_id);
-      if(it&&u.stage_index>=0&&u.stage_index<5)it.stages[u.stage_index]=!!u.value;
-    });
-    (r.item_notas||[]).forEach(u=>{
-      const it=allItems.find(x=>x.id===u.item_id);
-      if(it&&typeof u.nota==='string')it.nota=u.nota;
-    });
-    (r.task_updates||[]).forEach(u=>{
-      const o=pends.find(x=>x.id===u.obra_id);
-      const t=o&&o.tasks.find(x=>x.id===u.task_id);
-      if(t)t.done=!!u.done;
-    });
-    (r.new_tasks||[]).forEach(n=>{
-      const o=pends.find(x=>x.id===n.obra_id);
-      if(o&&n.text)o.tasks.push({id:'t'+Date.now()+Math.random().toString(36).slice(2,6),text:n.text,done:false});
-    });
-    (r.new_obras||[]).forEach(n=>{
-      if(!n.nombre)return;
-      pends.push({id:'o'+Date.now()+Math.random().toString(36).slice(2,6),obra:n.nombre,color:CK[pends.length%CK.length],
-        tasks:(n.tasks||[]).map(t=>({id:'t'+Date.now()+Math.random().toString(36).slice(2,6),text:t,done:false}))});
-    });
-    (r.new_items||[]).forEach(n=>{
-      const p=proyectos.find(x=>x.id===n.proyecto_id);
-      if(p&&n.nombre)p.items.push(nuevoItem(n.nombre,n.grupo||''));
-    });
-    (r.item_terminado||[]).forEach(u=>{
-      const it=allItems.find(x=>x.id===u.item_id);
-      if(it)it.terminado=!!u.value;
-    });
-    (r.item_fechas||[]).forEach(u=>{
-      const it=allItems.find(x=>x.id===u.item_id);
-      if(it&&typeof u.fecha==='string')it.fecha=u.fecha;
-    });
-    (r.proyecto_updates||[]).forEach(u=>{
-      const p=proyectos.find(x=>x.id===u.proyecto_id);
-      if(p&&typeof u.fecha_entrega==='string')p.fechaEntrega=u.fecha_entrega;
-    });
-    (r.new_proyectos||[]).forEach(n=>{
-      if(!n.nombre)return;
-      proyectos.push({id:'p'+Date.now()+Math.random().toString(36).slice(2,6),nombre:n.nombre,fechaEntrega:n.fecha_entrega||'',
-        items:(n.items||[]).map(it=>nuevoItem(it.nombre,it.grupo||''))});
-    });
-    save();renderAll();
-    const rd=$(idResult);
+    const o=await apiPost('dictado',{texto:texto});
+    if(o&&o.v)versionActual=o.v;
+    await load();
     rd.className='result r-ok';rd.classList.remove('hidden');
-    rd.textContent='Listo: '+(r.resumen||'tablero actualizado');
+    rd.textContent=o.respuesta||'Listo.';
     ta.value='';ta.style.height='auto';
-    if(idTexto==='dictado-q')setTimeout(()=>{rd.classList.add('hidden')},7000);
+    if(idTexto==='dictado-q')setTimeout(()=>{rd.classList.add('hidden')},12000);
   }catch(err){
-    const rd=$(idResult);
     rd.className='result r-err';rd.classList.remove('hidden');
     rd.textContent='No se pudo procesar ('+err.message+'). Intenta de nuevo.';
   }

@@ -12,11 +12,14 @@ Toca lo siguiente y nada más:
   · las etapas y Terminado escriben en la base
   · edición: nota, fecha, renombrar mueble y grupo, editar proyecto,
     palomear pendientes de obra y oficina, estado y nota de cotización
+  · altas: proyecto, mueble, grupo, obra, pendiente, cotización
+  · eliminar archiva (nada se borra) y reordenar se guarda
+  · el dictado lo atiende el asistente del servidor, no el navegador
   · Deshacer llama al servidor; Rehacer se va (allá no existe)
-  · el encabezado muestra si está en vivo
+  · el encabezado muestra quién entró y si está en vivo
 
-Lo que sigue pasando por save() —y por lo tanto sólo avisa— es crear,
-eliminar y reordenar.
+Se quita el botón de restaurar respaldo: es el único del tablero que
+puede perder datos y no se puede deshacer. Exportar se queda.
 
 Si el panel cambió de forma y algún parche ya no aplica, lo dice y no
 escribe nada. Nunca deja un panel a medio conectar.
@@ -134,12 +137,14 @@ async function load(){
   renderAll();
 }
 
-// Crear, eliminar y reordenar todavía pasan por aquí: avisa y recarga,
-// para no dejarte creyendo que se guardó.
+// Red de seguridad. Ya nada del panel debería llamar a save(): todo
+// escribe en la base. Si un panel reexportado trae un botón nuevo que
+// todavía no está conectado, cae aquí y lo dice, en vez de fingir que
+// se guardó.
 function save(){
   pushHist();
   renderAll();
-  aviso('Crear y eliminar todavía no se guardan desde el panel. Por ahora, pídeselo al asistente por WhatsApp.',false);
+  aviso('Ese botón todavía no está conectado a la base. Dímelo y lo conecto.',false);
   setTimeout(load,400);
 }
 
@@ -407,6 +412,62 @@ EDICIONES: list[tuple[str, str, str]] = [
           o=>{oficina=oficina.filter(x=>x!==o)});
       }});""",
     ),
+    # --- archivar y reordenar (tanda 3) ---
+    (
+        'eliminar proyecto',
+        '    openEditor({title:\'Eliminar proyecto\',text:\'Se eliminará "\'+proy.nombre+\'" con todos sus muebles. No se puede deshacer.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        proyectos=proyectos.filter(p=>p.id!==proy.id);\n        tabActiva=\'dash\';save();renderAll();\n      }});',
+        '    openEditor({title:\'Eliminar proyecto\',text:\'"\'+proy.nombre+\'" y sus \'+proy.items.length+\' muebles se archivan: desaparecen del tablero pero no se pierden, y Deshacer los regresa.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        const antes=proyectos, tab=tabActiva;\n        proyectos=proyectos.filter(p=>p.id!==proy.id);\n        tabActiva=\'dash\';\n        guardar(\'archivar_obra\',{obra_id:proy.id,archivado:true},\n                ()=>{proyectos=antes;tabActiva=tab});\n      }});',
+    ),
+    (
+        'eliminar grupo',
+        '    openEditor({title:\'Eliminar habitación / grupo\',text:\'Se eliminará "\'+g+\'" con sus \'+n+\' muebles. No se puede deshacer.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        proy.items=proy.items.filter(it=>it.grupo!==g);\n        save();renderAll();\n      }});',
+        '    openEditor({title:\'Eliminar habitación / grupo\',text:\'"\'+g+\'" y sus \'+n+\' muebles se archivan. Deshacer los regresa.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        const antes=proy.items;\n        proy.items=proy.items.filter(it=>it.grupo!==g);\n        guardar(\'archivar_grupo\',{obra_id:proy.id,grupo:g},()=>{proy.items=antes});\n      }});',
+    ),
+    (
+        'eliminar mueble',
+        '    openEditor({title:\'Eliminar mueble\',text:\'¿Eliminar "\'+it.nombre+\'"?\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        proy.items=proy.items.filter(x=>x.id!==it.id);save();renderAll();\n      }});',
+        '    openEditor({title:\'Eliminar mueble\',text:\'"\'+it.nombre+\'" se archiva. Deshacer lo regresa.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        const antes=proy.items;\n        proy.items=proy.items.filter(x=>x.id!==it.id);\n        guardar(\'archivar_mueble\',{mueble_id:it.id,archivado:true},()=>{proy.items=antes});\n      }});',
+    ),
+    (
+        'eliminar obra de pendientes',
+        '    openEditor({title:\'Eliminar obra\',text:\'¿Eliminar "\'+o.obra+\'" y sus tareas?\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        pends=pends.filter(x=>x.id!==o.id);save();renderAll();\n      }});',
+        '    openEditor({title:\'Eliminar obra\',text:\'"\'+o.obra+\'" y sus \'+o.tasks.length+\' tareas se archivan. Deshacer las regresa.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        const antes=pends;\n        pends=pends.filter(x=>x.id!==o.id);\n        guardar(\'archivar_obra\',{obra_id:o.id,archivado:true},()=>{pends=antes});\n      }});',
+    ),
+    (
+        'eliminar cotización',
+        '    openEditor({title:\'Eliminar cotización\',text:\'¿Eliminar la cotización de "\'+c.cliente+\'"?\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{cotizaciones=cotizaciones.filter(x=>x.id!==c.id);save();renderAll();}});',
+        '    openEditor({title:\'Eliminar cotización\',text:\'La cotización de "\'+c.cliente+\'" se archiva. Deshacer la regresa.\',danger:true,okText:\'Eliminar\',\n      onOk:()=>{\n        const antes=cotizaciones;\n        cotizaciones=cotizaciones.filter(x=>x.id!==c.id);\n        guardar(\'archivar_cotizacion\',{cotizacion_id:c.id,archivado:true},\n                ()=>{cotizaciones=antes});\n      }});',
+    ),
+    (
+        'eliminar pendiente de oficina',
+        "  }else if(act==='of-del'){\n    const o=oficina.find(x=>x.id===btn.dataset.oid);\n    if(!o)return;\n    oficina=oficina.filter(x=>x.id!==o.id);save();renderAll();\n  }",
+        "  }else if(act==='of-del'){\n    const o=oficina.find(x=>x.id===btn.dataset.oid);\n    if(!o)return;\n    const antes=oficina;\n    oficina=oficina.filter(x=>x.id!==o.id);\n    guardar('archivar_pendiente',{pendiente_id:o.id,archivado:true},()=>{oficina=antes});\n  }",
+    ),
+    (
+        'reordenar arrastrando un mueble',
+        'function moverItem(p,idArrastrado,idDestino){\n  if(idArrastrado===idDestino)return;\n  const from=p.items.findIndex(i=>i.id===idArrastrado);\n  const to=p.items.findIndex(i=>i.id===idDestino);\n  if(from<0||to<0)return;\n  const [m]=p.items.splice(from,1);\n  // al soltar sobre otro mueble, hereda su grupo\n  const destino=p.items.find(i=>i.id===idDestino);\n  if(destino)m.grupo=destino.grupo;\n  const newTo=p.items.findIndex(i=>i.id===idDestino);\n  p.items.splice(newTo,0,m);\n  save();renderAll();\n}',
+        "// El orden vive en la base: se manda la lista completa de la obra tal\n// como quedó, con el grupo de cada mueble, porque al soltar uno sobre\n// otro hereda su habitación y las dos cosas cambian juntas.\nfunction guardarOrden(p,antes){\n  if(p.items.some(i=>String(i.id).startsWith('tmp'))){\n    aviso('Espera un segundo: todavía se está guardando un mueble nuevo.',false);\n    restaurarOrden(p,antes);renderAll();return;\n  }\n  guardar('acomodar',\n    {obra_id:p.id,muebles:p.items.map(i=>({id:i.id,grupo:i.grupo||null}))},\n    ()=>restaurarOrden(p,antes));\n}\n\nfunction fotoOrden(p){return p.items.map(i=>({id:i.id,grupo:i.grupo}))}\n\nfunction restaurarOrden(p,antes){\n  const porId={};\n  p.items.forEach(i=>{porId[i.id]=i});\n  p.items=antes.map(a=>{const it=porId[a.id]; if(it)it.grupo=a.grupo; return it})\n               .filter(Boolean);\n}\n\nfunction moverItem(p,idArrastrado,idDestino){\n  if(idArrastrado===idDestino)return;\n  const from=p.items.findIndex(i=>i.id===idArrastrado);\n  const to=p.items.findIndex(i=>i.id===idDestino);\n  if(from<0||to<0)return;\n  const antes=fotoOrden(p);\n  const [m]=p.items.splice(from,1);\n  // al soltar sobre otro mueble, hereda su grupo\n  const destino=p.items.find(i=>i.id===idDestino);\n  if(destino)m.grupo=destino.grupo;\n  const newTo=p.items.findIndex(i=>i.id===idDestino);\n  p.items.splice(newTo,0,m);\n  guardarOrden(p,antes);\n}",
+    ),
+    (
+        'reordenar arrastrando una habitación',
+        'function moverGrupo(p,gArrastrado,gDestino){\n  if(gArrastrado===gDestino)return;\n  const grupos=[...new Set(p.items.map(i=>i.grupo))];\n  const bloques={};\n  grupos.forEach(g=>bloques[g]=p.items.filter(i=>i.grupo===g));\n  const orden=grupos.filter(g=>g!==gArrastrado);\n  const idx=orden.indexOf(gDestino);\n  orden.splice(idx,0,gArrastrado);\n  p.items=orden.flatMap(g=>bloques[g]);\n  save();renderAll();\n}',
+        'function moverGrupo(p,gArrastrado,gDestino){\n  if(gArrastrado===gDestino)return;\n  const antes=fotoOrden(p);\n  const grupos=[...new Set(p.items.map(i=>i.grupo))];\n  const bloques={};\n  grupos.forEach(g=>bloques[g]=p.items.filter(i=>i.grupo===g));\n  const orden=grupos.filter(g=>g!==gArrastrado);\n  const idx=orden.indexOf(gDestino);\n  orden.splice(idx,0,gArrastrado);\n  p.items=orden.flatMap(g=>bloques[g]);\n  guardarOrden(p,antes);\n}',
+    ),
+    (
+        'quitar el botón de restaurar',
+        '    <button data-act="importar">\\u2912 Restaurar desde respaldo</button>\n',
+        '',
+    ),
+    (
+        'quitar la rama de importar',
+        "  if(act==='importar'){$('file-import').click();return}\n",
+        '',
+    ),
+    (
+        'quitar el input de archivo',
+        '    <input type="file" id="file-import" accept=".json,application/json" style="display:none">\n',
+        '',
+    ),
 ]
 
 MANEJADOR_UNDO = '''  if(act==='undo'){
@@ -420,6 +481,37 @@ MANEJADOR_UNDO = '''  if(act==='undo'){
     return;
   }
   if(act==='redo'){return}   // el servidor no rehace: el botón se oculta'''
+
+
+DICTADO = """// El dictado lo atiende el mismo asistente que contesta por WhatsApp:
+// busca, escribe en la base y deja su rastro, así que lo que dictes aquí
+// se deshace con el mismo botón. Antes esto le hablaba a la API de
+// Anthropic desde el navegador, sin llave, y en Railway nunca funcionó.
+async function procesarDictado(idTexto,idBtn,idResult){
+  const ta=$(idTexto);
+  const texto=ta.value.trim();
+  if(!texto)return;
+  const btn=$(idBtn);
+  const txtOriginal=btn.textContent;
+  btn.disabled=true;btn.textContent='...';
+  const rd=$(idResult);
+  rd.classList.add('hidden');
+  try{
+    const o=await apiPost('dictado',{texto:texto});
+    if(o&&o.v)versionActual=o.v;
+    await load();
+    rd.className='result r-ok';rd.classList.remove('hidden');
+    rd.textContent=o.respuesta||'Listo.';
+    ta.value='';ta.style.height='auto';
+    if(idTexto==='dictado-q')setTimeout(()=>{rd.classList.add('hidden')},12000);
+  }catch(err){
+    rd.className='result r-err';rd.classList.remove('hidden');
+    rd.textContent='No se pudo procesar ('+err.message+'). Intenta de nuevo.';
+  }
+  btn.disabled=false;btn.textContent=txtOriginal;
+}
+
+"""
 
 
 def cortar(s, ini, fin, nuevo, etiqueta, fallos):
@@ -474,6 +566,21 @@ def conectar(html: str) -> tuple[str, list[str]]:
     # 4b. los botones de edición escriben en la base
     for etiqueta, viejo, nuevo in EDICIONES:
         s = reemplazar(s, viejo, nuevo, etiqueta, fallos, unico=True)
+
+    # 4c. el dictado deja de hablarle al navegador y usa el agente
+    s = cortar(s, "async function procesarDictado(idTexto,idBtn,idResult){",
+               "$('btn-ap').addEventListener(", DICTADO, "dictado", fallos)
+
+    # 4d. fuera el restaurador de respaldos y su listener huérfano
+    s = reemplazar(s, """$('file-import').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];
+  if(f)importarArchivo(f);
+  e.target.value='';
+});
+
+""", "", "listener del archivo de respaldo", fallos)
+    s = cortar(s, "function importarArchivo(file){", "\nfunction fmtMonto(n){",
+               "", "restaurador de respaldos", fallos)
 
     # 5. Deshacer al servidor, Rehacer fuera
     s = reemplazar(s,

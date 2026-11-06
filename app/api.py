@@ -50,18 +50,20 @@ def estado() -> dict:
                .execute().data)
     obras = (cli.table("obras")
              .select("id, nombre, tipo, fecha_entrega, orden, es_proyecto")
-             .execute().data)
+             .eq("archivado", False).execute().data)
     pends = (cli.table("pendientes").select("id, texto, hecho, obra_id, created_at")
-             .order("created_at").execute().data)
+             .eq("archivado", False).order("created_at").execute().data)
     cotiz = (cli.table("cotizaciones")
              .select("id, cliente, concepto, monto, fecha, estado, nota")
-             .order("fecha", desc=True).execute().data)
+             .eq("archivado", False).order("fecha", desc=True).execute().data)
 
     por_id = {o["id"]: o for o in obras}
 
     # --- proyectos: sólo las obras que tienen muebles
     proyectos: dict[str, dict] = {}
     for m in muebles:
+        if m["obra_id"] not in por_id:      # obra archivada
+            continue
         p = proyectos.get(m["obra_id"])
         if p is None:
             o = por_id.get(m["obra_id"], {})
@@ -98,7 +100,9 @@ def estado() -> dict:
     grupos: dict[str, dict] = {}
     oficina: list[dict] = []
     for t in pends:
-        o = por_id.get(t["obra_id"], {})
+        o = por_id.get(t["obra_id"])
+        if o is None:                      # obra archivada
+            continue
         if o.get("tipo") == "interna":
             oficina.append({"id": t["id"], "text": t["texto"], "done": bool(t["hecho"])})
             continue
