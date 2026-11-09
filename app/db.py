@@ -34,6 +34,16 @@ def buscar_pendiente(texto: str | None = None, obra: str | None = None):
     return _rpc("buscar_pendiente", p_texto=texto, p_obra=obra)
 
 
+def buscar_obra(texto: str | None = None):
+    """Obras activas. Sin texto devuelve todas, para 'lístame las obras'."""
+    return _rpc("buscar_obra", p_texto=texto)
+
+
+def buscar_grupo(obra_id):
+    """Las habitaciones / grupos de una obra, con cuántos muebles tiene cada una."""
+    return _rpc("buscar_grupo", p_obra_id=obra_id)
+
+
 def resumen(obra: str | None = None):
     return _rpc("resumen", p_obra=obra)
 
@@ -164,6 +174,15 @@ def acomodar_muebles(obra_id, muebles: list, persona=None, mensaje=None):
                 p_persona=persona, p_mensaje=mensaje)
 
 
+def reclamar_aviso(clave: str, dia) -> bool:
+    """True sólo la primera vez que se pide ese aviso ese día."""
+    return bool(_rpc("reclamar_aviso", p_clave=clave, p_dia=str(dia)))
+
+
+def destinatarios_resumen():
+    return _rpc("destinatarios_resumen") or []
+
+
 def deshacer(persona):
     return _rpc("deshacer", p_persona=persona)
 
@@ -184,14 +203,33 @@ def persona_por_telefono(telefono: str) -> dict | None:
     return r[0] if r else None
 
 
-def guardar_mensaje(telefono, direccion, texto, persona_id=None, wa_id=None):
+def guardar_mensaje(telefono, direccion, texto, persona_id=None, wa_id=None,
+                    media_url=None):
     try:
         db().table("mensajes").insert({
             "telefono": telefono, "direccion": direccion, "texto": texto,
             "persona_id": persona_id, "wa_message_id": wa_id,
+            "media_url": media_url,
         }).execute()
     except Exception:
         pass  # un mensaje repetido choca con wa_message_id: es lo correcto
+
+
+def texto_de_mensaje(wa_id: str, texto: str) -> None:
+    """Le pone el texto a un mensaje que llegó como audio.
+
+    Sin esto la nota de voz quedaría sin texto y el historial se la
+    saltaría, así que el asistente perdería el hilo en el mensaje
+    siguiente.
+    """
+    if not wa_id:
+        return
+    try:
+        db().table("mensajes").update({"texto": texto}) \
+            .eq("wa_message_id", wa_id).execute()
+    except Exception:
+        log = __import__("logging").getLogger("asistente")
+        log.warning("no se pudo guardar la transcripción en mensajes")
 
 
 def ya_procesado(wa_id: str) -> bool:

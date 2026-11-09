@@ -468,6 +468,17 @@ EDICIONES: list[tuple[str, str, str]] = [
         '    <input type="file" id="file-import" accept=".json,application/json" style="display:none">\n',
         '',
     ),
+    # --- arreglos del panel original ---
+    (
+        'setupDrag en móvil',
+        "function setupDrag(p){\n  const tbody=$('proy-table').querySelector('tbody');\n  if(!tbody)return;",
+        "function setupDrag(p){\n  // En móvil la tabla no existe: el tablero la reemplaza por la lista\n  // compacta, así que $('proy-table') es null y antes esto tronaba todo\n  // el script al girar el teléfono o al abrir un proyecto.\n  const tabla=$('proy-table');\n  if(!tabla)return;\n  const tbody=tabla.querySelector('tbody');\n  if(!tbody)return;",
+    ),
+    (
+        'no arrastrar en móvil',
+        "  if(vistaProy==='tabla'&&!orden.campo&&filtro.estado==='todos'&&filtro.entrega==='todas'&&agrupar)setupDrag(p);",
+        "  if(!mov&&vistaProy==='tabla'&&!orden.campo&&filtro.estado==='todos'&&filtro.entrega==='todas'&&agrupar)setupDrag(p);",
+    ),
 ]
 
 MANEJADOR_UNDO = '''  if(act==='undo'){

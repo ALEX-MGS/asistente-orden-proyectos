@@ -26,6 +26,10 @@ ESPERADAS = [
     # archivar y reordenar (13_archivar.sql)
     "archivar_mueble", "archivar_grupo", "archivar_obra",
     "archivar_pendiente", "archivar_cotizacion", "acomodar_muebles",
+    # el bot al día (14_bot_al_dia.sql)
+    "buscar_obra", "buscar_grupo",
+    # resumen de la mañana (15_resumen_diario.sql)
+    "reclamar_aviso", "soltar_aviso", "destinatarios_resumen",
 ]
 
 

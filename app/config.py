@@ -36,6 +36,20 @@ URL_PUBLICA = os.getenv("URL_PUBLICA", "")
 
 HISTORIAL = int(os.getenv("HISTORIAL", "12"))
 
+# --- notas de voz -----------------------------------------------------
+# La transcripción siempre la hace OpenAI, aparte de PROVEEDOR: así el
+# chat puede atenderlo Claude y las notas de voz seguir funcionando.
+# whisper-1 se retira de la API el 26 de febrero de 2027; gpt-transcribe
+# es su reemplazo para archivos grabados y cuesta menos.
+VOZ_API_KEY = os.getenv("OPENAI_API_KEY", "")
+MODELO_VOZ = os.getenv("MODELO_VOZ", "gpt-transcribe")
+BASE_URL_VOZ = os.getenv("BASE_URL_VOZ", "")
+
+# --- resumen de la mañana --------------------------------------------
+# Vacía = apagado. Pon "08:47" para que salga a esa hora.
+RESUMEN_HORA = os.getenv("RESUMEN_HORA", "")
+ZONA = os.getenv("ZONA", "America/Mexico_City")
+
 # --- tablero web ------------------------------------------------------
 # El tablero queda expuesto a internet. Con TABLERO_TOKEN puesto, sólo
 # abre quien traiga ?k=<token> en la URL.

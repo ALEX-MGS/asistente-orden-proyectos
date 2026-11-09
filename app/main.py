@@ -5,8 +5,10 @@ espera respuesta en unos 15 segundos. El asistente puede tardar más que
 eso cuando encadena varias herramientas, así que contestamos vacío de
 inmediato y mandamos la respuesta real por la API de Twilio.
 """
+import asyncio
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from pathlib import Path
@@ -14,10 +16,27 @@ from pathlib import Path
 from fastapi import BackgroundTasks, Body, FastAPI, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import agente, api, config, db, tablero, whatsapp
+from . import agente, api, config, db, diario, tablero, voz, whatsapp
 
 log = logging.getLogger("asistente")
-app = FastAPI(title="Asistente de obra · Grupo Morales")
+
+
+@asynccontextmanager
+async def ciclo_de_vida(_app):
+    """Arranca el vigía del resumen de la mañana junto con el servicio.
+
+    Va aquí dentro y no en un segundo servicio de Railway a propósito:
+    un servicio más cuesta y hay que mantenerlo. El candado de `avisos`
+    es lo que hace que los reinicios no manden el mensaje dos veces.
+    """
+    tarea = asyncio.create_task(diario.vigilar())
+    try:
+        yield
+    finally:
+        tarea.cancel()
+
+
+app = FastAPI(title="Asistente de obra · Grupo Morales", lifespan=ciclo_de_vida)
 
 VACIO = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 
@@ -45,11 +64,47 @@ def atender(telefono: str, texto: str, persona: dict):
                   "El renglón de arriba dice por qué.")
 
 
+def avisar(telefono: str, persona: dict, texto: str):
+    """Manda un mensaje suelto y lo deja en la base."""
+    db.guardar_mensaje(telefono, "saliente", texto, persona.get("id"))
+    whatsapp.enviar(telefono, texto)
+
+
+def atender_voz(telefono: str, url: str, tipo: str, persona: dict, sid: str):
+    """Transcribe una nota de voz y la trata como si la hubieran escrito.
+
+    La respuesta empieza repitiendo lo que se oyó. Eso es a propósito: una
+    transcripción puede equivocarse con un nombre de mueble, y conviene
+    que se vea en el mismo mensaje para poder corregirla de inmediato.
+    """
+    dicho, motivo = voz.transcribir(url, tipo)
+    if not dicho:
+        avisar(telefono, persona,
+               f"No pude usar la nota de voz: {motivo}. ¿Me lo escribes?")
+        return
+
+    db.texto_de_mensaje(sid, dicho)
+    log.info("nota de voz de %s transcrita: %s", telefono, dicho[:80])
+
+    try:
+        respuesta = agente.responder(dicho, persona, db.historial(telefono))
+    except Exception as e:
+        log.exception("falló el asistente con una nota de voz")
+        respuesta = f"Se me atoró algo procesando eso ({type(e).__name__})."
+
+    completa = f"Oí: «{dicho}»\n\n{respuesta}"
+    db.guardar_mensaje(telefono, "saliente", completa, persona["id"])
+    if not whatsapp.enviar(telefono, completa):
+        log.error("La respuesta a la nota de voz no llegó a WhatsApp.")
+
+
 @app.get("/")
 def salud():
     faltan = config.faltantes()
     return {"ok": not faltan, "faltan": faltan,
-            "proveedor": config.PROVEEDOR, "modelo": config.MODELO}
+            "proveedor": config.PROVEEDOR, "modelo": config.MODELO,
+            "voz": "lista" if not voz.disponible() else voz.disponible(),
+            "resumen_diario": config.RESUMEN_HORA or "apagado"}
 
 
 PANEL = Path(__file__).resolve().parent.parent / "estatico" / "panel.html"
@@ -321,6 +376,23 @@ def api_dictado(k: str = "", cuerpo: dict = Body(...)):
                          **con_version({})})
 
 
+@app.post("/api/resumen-diario")
+def api_resumen_diario(k: str = "", forzar: bool = False):
+    """Manda el resumen de la mañana ahora mismo.
+
+    Sirve para probarlo sin esperar al día siguiente. Sin forzar respeta
+    el candado del día; con forzar=true lo manda aunque ya haya salido.
+    """
+    p = quien(k)
+    if not p:
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(diario.enviar(forzar=forzar))
+    except Exception as e:
+        log.exception("falló /api/resumen-diario")
+        return JSONResponse({"error": motivo(e)}, status_code=400)
+
+
 @app.post("/api/deshacer")
 def api_deshacer(k: str = ""):
     """Deshacer el último cambio, igual que por WhatsApp."""
@@ -366,6 +438,8 @@ async def entrante(request: Request, fondo: BackgroundTasks):
     telefono = whatsapp.normalizar(form.get("From", ""))
     texto = (form.get("Body") or "").strip()
     sid = form.get("MessageSid", "")
+    media_url = (form.get("MediaUrl0") or "").strip()
+    media_tipo = (form.get("MediaContentType0") or "").strip()
 
     # 2. Twilio reintenta si tardamos. Sin este candado un mismo mensaje
     #    se procesaría dos veces y el mueble avanzaría dos etapas.
@@ -373,13 +447,27 @@ async def entrante(request: Request, fondo: BackgroundTasks):
         return twiml()
 
     persona = db.persona_por_telefono(telefono)
-    db.guardar_mensaje(telefono, "entrante", texto, (persona or {}).get("id"), sid)
+    db.guardar_mensaje(telefono, "entrante", texto, (persona or {}).get("id"), sid,
+                       media_url or None)
 
     if not persona:
         return twiml("Este número no está autorizado. Pídele a Alex que lo dé de alta.")
-    if not texto:
-        return twiml("Por ahora sólo entiendo texto. Las notas de voz vienen después.")
 
     # 3. Contestamos vacío ya, y el trabajo real sigue en segundo plano.
-    fondo.add_task(atender, telefono, texto, persona)
-    return twiml()
+    if texto:
+        fondo.add_task(atender, telefono, texto, persona)
+        return twiml()
+
+    # Una nota de voz llega sin Body y con el audio en MediaUrl0.
+    if media_url and voz.es_audio(media_tipo):
+        falta = voz.disponible()
+        if falta:
+            return twiml(f"No puedo con notas de voz todavía: {falta}.")
+        fondo.add_task(atender_voz, telefono, media_url, media_tipo, persona, sid)
+        return twiml()
+
+    if media_url:
+        return twiml("Por ahora entiendo texto y notas de voz. "
+                     "Las fotos y los planos vienen después.")
+
+    return twiml("No vi nada en ese mensaje. ¿Me lo escribes o me mandas una nota de voz?")

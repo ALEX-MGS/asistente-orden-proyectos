@@ -168,6 +168,155 @@ HERRAMIENTAS = [
         },
     },
     {
+        "name": "buscar_obra",
+        "description": (
+            "Busca obras o proyectos por nombre parcial. Sin texto devuelve todas. "
+            "Úsala SIEMPRE antes de editar o archivar una obra, o de tocar un "
+            "grupo: esas herramientas piden el obra_id y sólo de aquí sale. "
+            "Devuelve cuántos muebles y cuántos pendientes abiertos tiene cada una."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "texto": {"type": "string",
+                          "description": "Opcional. Ej: 'silver', 'bosque'"},
+            },
+        },
+    },
+    {
+        "name": "buscar_grupo",
+        "description": (
+            "Lista las habitaciones o grupos de una obra, con cuántos muebles "
+            "tiene cada uno. Requiere el obra_id de buscar_obra. Úsala antes de "
+            "renombrar o archivar un grupo, para usar el nombre exacto."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"obra_id": {"type": "string"}},
+            "required": ["obra_id"],
+        },
+    },
+    {
+        "name": "renombrar_mueble",
+        "description": (
+            "Le cambia el nombre a un mueble. Sólo el nombre: no mueve etapas ni "
+            "nada más. Requiere el mueble_id de buscar_mueble."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mueble_id": {"type": "string"},
+                "nombre": {"type": "string"},
+            },
+            "required": ["mueble_id", "nombre"],
+        },
+    },
+    {
+        "name": "archivar_mueble",
+        "description": (
+            "Saca un mueble del tablero. NO lo borra: la fila se queda en la base "
+            "con todo su historial y deshacer lo regresa. Es lo que hay que usar "
+            "cuando pidan quitar, eliminar o borrar un mueble del tablero — no "
+            "confundir con reiniciar_mueble, que sólo le quita el progreso. "
+            "Con archivado:false lo regresa al tablero."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mueble_id": {"type": "string"},
+                "archivado": {"type": "boolean",
+                              "description": "true lo saca, false lo regresa. Default true."},
+            },
+            "required": ["mueble_id"],
+        },
+    },
+    {
+        "name": "renombrar_grupo",
+        "description": (
+            "Le cambia el nombre a una habitación o grupo dentro de una obra; "
+            "se actualiza en todos sus muebles de un golpe. Requiere el obra_id "
+            "y el nombre exacto del grupo (de buscar_grupo)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "obra_id": {"type": "string"},
+                "grupo": {"type": "string", "description": "El nombre actual, exacto"},
+                "nuevo": {"type": "string"},
+            },
+            "required": ["obra_id", "grupo", "nuevo"],
+        },
+    },
+    {
+        "name": "archivar_grupo",
+        "description": (
+            "Saca del tablero todos los muebles de una habitación o grupo. No los "
+            "borra; deshacer los regresa. Requiere el obra_id y el nombre exacto "
+            "del grupo. PREGUNTA ANTES: avisa cuántos muebles se van y espera el sí."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "obra_id": {"type": "string"},
+                "grupo": {"type": "string"},
+            },
+            "required": ["obra_id", "grupo"],
+        },
+    },
+    {
+        "name": "editar_obra",
+        "description": (
+            "Cambia el nombre, la fecha de entrega o la nota de una obra. Manda "
+            "SÓLO los campos que cambian. Requiere el obra_id de buscar_obra. "
+            "Para la fecha de entrega de un MUEBLE usa fijar_fecha, no esto."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "obra_id": {"type": "string"},
+                "nombre": {"type": "string"},
+                "fecha_entrega": {"type": "string",
+                                  "description": "AAAA-MM-DD, o vacío para quitarla"},
+                "nota": {"type": "string"},
+            },
+            "required": ["obra_id"],
+        },
+    },
+    {
+        "name": "archivar_obra",
+        "description": (
+            "Saca una obra entera del tablero, con todos sus muebles. No borra "
+            "nada y deshacer la regresa, pero es el cambio más grande que puedes "
+            "hacer: PREGUNTA ANTES SIEMPRE, diciendo el nombre de la obra y "
+            "cuántos muebles se van, y espera el sí. Con archivado:false la regresa."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "obra_id": {"type": "string"},
+                "archivado": {"type": "boolean",
+                              "description": "true la saca, false la regresa. Default true."},
+            },
+            "required": ["obra_id"],
+        },
+    },
+    {
+        "name": "archivar_pendiente",
+        "description": (
+            "Saca un pendiente del tablero porque ya no aplica o estaba mal "
+            "escrito. Es DISTINTO de cerrar_pendiente: cerrar es 'ya se hizo', "
+            "archivar es 'esto no iba'. Requiere el id de buscar_pendiente."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pendiente_id": {"type": "string"},
+                "archivado": {"type": "boolean"},
+            },
+            "required": ["pendiente_id"],
+        },
+    },
+    {
         "name": "deshacer",
         "description": "Revierte el último cambio que hizo esta persona. Úsala cuando digan que te equivocaste.",
         "input_schema": {"type": "object", "properties": {}},
@@ -178,7 +327,13 @@ HERRAMIENTAS = [
 # exactamente lo que quedó anotado.
 ESCRITURA = {"actualizar_etapa", "marcar_terminado", "reiniciar_mueble", "poner_nota",
              "crear_mueble", "fijar_fecha", "agregar_pendiente",
-             "cerrar_pendiente", "deshacer"}
+             "cerrar_pendiente", "deshacer",
+             "renombrar_mueble", "archivar_mueble", "renombrar_grupo",
+             "archivar_grupo", "editar_obra", "archivar_obra", "archivar_pendiente"}
+
+# Los campos que editar_obra acepta. El modelo manda sólo los que cambian;
+# lo que no venga no se toca.
+CAMPOS_OBRA = ("nombre", "fecha_entrega", "nota")
 
 
 def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | None):
@@ -211,6 +366,36 @@ def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | Non
                                     persona_id, mensaje)
         elif nombre == "resumen":
             r = db.resumen(args.get("obra"))
+
+        # --- lo que el panel ya hacía y el bot no (14_bot_al_dia.sql) ---
+        elif nombre == "buscar_obra":
+            r = db.buscar_obra(args.get("texto"))
+        elif nombre == "buscar_grupo":
+            r = db.buscar_grupo(args["obra_id"])
+        elif nombre == "renombrar_mueble":
+            r = db.renombrar_mueble(args["mueble_id"], args["nombre"],
+                                    persona_id, mensaje)
+        elif nombre == "archivar_mueble":
+            r = db.archivar_mueble(args["mueble_id"], args.get("archivado", True),
+                                   persona_id, mensaje)
+        elif nombre == "renombrar_grupo":
+            r = db.renombrar_grupo(args["obra_id"], args["grupo"], args["nuevo"],
+                                   persona_id, mensaje)
+        elif nombre == "archivar_grupo":
+            r = db.archivar_grupo(args["obra_id"], args["grupo"], persona_id, mensaje)
+        elif nombre == "editar_obra":
+            cambios = {c: args[c] for c in CAMPOS_OBRA if c in args}
+            if not cambios:
+                return ("Error: no mandaste ningún campo que cambiar. "
+                        f"Los que acepta son: {', '.join(CAMPOS_OBRA)}."), True
+            r = db.editar_obra(args["obra_id"], cambios, persona_id, mensaje)
+        elif nombre == "archivar_obra":
+            r = db.archivar_obra(args["obra_id"], args.get("archivado", True),
+                                 persona_id, mensaje)
+        elif nombre == "archivar_pendiente":
+            r = db.archivar_pendiente(args["pendiente_id"],
+                                      args.get("archivado", True), persona_id, mensaje)
+
         elif nombre == "deshacer":
             r = db.deshacer(persona_id)
         else:
@@ -224,4 +409,10 @@ def ejecutar(nombre: str, args: dict, persona_id: str | None, mensaje: str | Non
             texto += ("\nPISTA: ese id no corresponde. Vuelve a llamar a buscar_mueble "
                       "(o buscar_pendiente) y usa el id que ESA búsqueda devuelva. "
                       "Nunca reutilices un id que te dio otra herramienta.")
+        elif "No existe esa obra" in texto:
+            texto += ("\nPISTA: ese obra_id no corresponde. Llama a buscar_obra y usa "
+                      "el id que devuelva. El id de un mueble no sirve como obra_id.")
+        elif "No hay muebles" in texto:
+            texto += ("\nPISTA: el nombre del grupo tiene que ser exacto. Llama a "
+                      "buscar_grupo con ese obra_id para ver cómo se llaman.")
         return texto, True
