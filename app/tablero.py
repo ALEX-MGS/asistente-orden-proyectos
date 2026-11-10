@@ -91,6 +91,7 @@ def fila(m: dict, hechas: list[bool]) -> str:
 
 
 def render(d: dict) -> str:
+    negocio = config.NEGOCIO
     muebles, etapas = d["muebles"], d["etapas"]
     total = len(muebles)
     terminados = sum(1 for m in muebles if m["terminado"])
@@ -169,7 +170,7 @@ def render(d: dict) -> str:
 <html lang="es"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tablero · Grupo Morales</title>
+<title>Tablero · {negocio}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -261,7 +262,7 @@ footer{{color:var(--mut);font-size:.8rem;border-top:1px solid var(--linea);paddi
   {bloque_pend}
   {bloque_cot}
 
-  <footer>Grupo Morales · se actualiza solo cada 2 minutos.
+  <footer>{negocio} · se actualiza solo cada 2 minutos.
   Para cambiar algo, escríbele al asistente por WhatsApp.</footer>
 </div>
 <script>setTimeout(()=>location.reload(),120000);</script>

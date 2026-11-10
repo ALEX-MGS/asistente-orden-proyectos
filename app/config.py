@@ -45,6 +45,19 @@ VOZ_API_KEY = os.getenv("OPENAI_API_KEY", "")
 MODELO_VOZ = os.getenv("MODELO_VOZ", "gpt-transcribe")
 BASE_URL_VOZ = os.getenv("BASE_URL_VOZ", "")
 
+# --- de quién es esta instalación ------------------------------------
+# Lo único que hay que cambiar para montar una copia en otro taller.
+# NEGOCIO sale en el panel, en el tablero y en el título de la pestaña.
+#
+# NEGOCIO_PERFIL es lo que el asistente sabe del negocio: a qué se
+# dedica y cómo habla su gente. Ese texto entra tal cual en las
+# instrucciones del modelo, así que vale la pena escribirlo con calma —
+# es lo que hace que entienda "el mob 7 ya salió de barniz". Se pone en
+# una variable y no en un archivo porque Railway despliega desde git y
+# un archivo con los datos de un taller acabaría en el repo del otro.
+NEGOCIO = os.getenv("NEGOCIO", "el taller")
+NEGOCIO_PERFIL = os.getenv("NEGOCIO_PERFIL", "")
+
 # --- resumen de la mañana --------------------------------------------
 # Vacía = apagado. Pon "08:47" para que salga a esa hora.
 RESUMEN_HORA = os.getenv("RESUMEN_HORA", "")

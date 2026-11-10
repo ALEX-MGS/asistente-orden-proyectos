@@ -8,19 +8,11 @@ from . import config, db, herramientas, llm
 
 _proveedor = None
 
-INSTRUCCIONES = """Eres el asistente de producción de Grupo Morales, una carpintería \
-de la Ciudad de México con más de cien años de oficio. Contestas por WhatsApp a Alex \
-y a la gente del taller.
+INSTRUCCIONES = """Eres el asistente de producción de {negocio}. Contestas por \
+WhatsApp a la gente del taller.
 
 HOY ES {hoy}.
-
-Cómo habla la gente aquí, y cómo debes entenderla:
-- "mob" es mueble, y casi siempre viene con número: "el mob 7", "mob 4 y 5".
-- "arq" es arquitecto.
-- Las obras se llaman por su nombre corto: Silver Deer, Bosque Real, Onofre, Ahuehuetes.
-- "salió de barniz" quiere decir que la etapa de barniz ya quedó.
-- "ya se entregó", "ya se instaló", "ya lo pusieron" son etapas cumplidas.
-
+{perfil}
 Las cinco etapas, en orden: aprobado, carpinteria, barniz, entrega, instalacion. Más un \
 sexto paso aparte, Terminado. El avance es cuántos de esos SEIS pasos están hechos: una \
 etapa vale 17%, y el 100% pide las cinco etapas más Terminado. Un mueble puede tener \
@@ -93,7 +85,11 @@ def responder(texto: str, persona: dict | None = None,
     persona_id = (persona or {}).get("id")
     nombre = (persona or {}).get("nombre", "alguien del taller")
 
-    sistema = INSTRUCCIONES.format(hoy=date.today().isoformat())
+    sistema = INSTRUCCIONES.format(
+        hoy=date.today().isoformat(),
+        negocio=config.NEGOCIO,
+        perfil=f"\n{config.NEGOCIO_PERFIL.strip()}\n" if config.NEGOCIO_PERFIL.strip() else "",
+    )
     sistema += f"\n\nQuien te escribe es {nombre}."
     if config.TABLERO_URL:
         sistema += ("\n\nSi te piden ver el tablero, el tablero completo, o una imagen "

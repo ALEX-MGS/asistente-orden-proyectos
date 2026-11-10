@@ -64,6 +64,21 @@ async function apiPost(ruta, cuerpo){
 // de un golpe, y es el mismo nombre que queda en la bitácora.
 let quienSoy='';
 
+// El nombre del negocio lo manda el servidor en /api/estado, para que
+// la misma copia del panel sirva en cualquier taller sin editarla.
+let negocioNombre='Tablero';
+function archivoBase(){
+  return negocioNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+         .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'tablero';
+}
+function ponerNombre(n){
+  if(!n||n===negocioNombre)return;
+  negocioNombre=n;
+  const el=$('nombre-negocio');
+  if(el)el.textContent=n;
+  document.title='Panel '+n;
+}
+
 function marcarSincronizado(){
   const el=$('sello-sync');
   if(!el)return;
@@ -127,6 +142,7 @@ async function load(){
     oficina=o.oficina||[];
     versionActual=o.v||null;
     if(o.yo&&o.yo.nombre)quienSoy=o.yo.nombre;
+    ponerNombre(o.negocio);
     marcarSincronizado();
   }catch(e){
     aviso('No se pudo cargar el tablero: '+e.message,false);
@@ -481,6 +497,33 @@ EDICIONES: list[tuple[str, str, str]] = [
     ),
 ]
 
+# Estos cuatro dependen de cómo venga el export, no de la estructura
+# del panel: si el nombre del negocio ya no está escrito a mano, no
+# hay nada que reemplazar y eso no es un error.
+OPCIONALES: list[tuple[str, str, str]] = [
+    (
+        'título de la pestaña',
+        '<title>Panel Grupo Morales</title>',
+        '<title>Panel</title>',
+    ),
+    (
+        'nombre en el encabezado',
+        '    <div class="title">Grupo Morales</div>',
+        '    <div class="title" id="nombre-negocio">Tablero</div>',
+    ),
+    (
+        'el respaldo toma el nombre del servidor',
+        "    negocio:'Grupo Morales',\n    proyectos,pends,cotizaciones,oficina\n  };\n  const ok=descargar('grupo-morales-respaldo-'+hoyStamp()+'.json',JSON.stringify(datos,null,2),'application/json');",
+        "    negocio:negocioNombre,\n    proyectos,pends,cotizaciones,oficina\n  };\n  const ok=descargar(archivoBase()+'-respaldo-'+hoyStamp()+'.json',JSON.stringify(datos,null,2),'application/json');",
+    ),
+    (
+        'el CSV toma el nombre del servidor',
+        "  const ok=descargar('grupo-morales-'+hoyStamp()+'.csv',f,'text/csv;charset=utf-8');",
+        "  const ok=descargar(archivoBase()+'-'+hoyStamp()+'.csv',f,'text/csv;charset=utf-8');",
+    ),
+]
+
+
 MANEJADOR_UNDO = '''  if(act==='undo'){
     apiPost('deshacer',{})
       .then(r=>{
@@ -577,6 +620,11 @@ def conectar(html: str) -> tuple[str, list[str]]:
     # 4b. los botones de edición escriben en la base
     for etiqueta, viejo, nuevo in EDICIONES:
         s = reemplazar(s, viejo, nuevo, etiqueta, fallos, unico=True)
+
+    # 4b-bis. y el nombre del negocio, si todavía viene escrito a mano
+    for etiqueta, viejo, nuevo in OPCIONALES:
+        if viejo in s:
+            s = s.replace(viejo, nuevo, 1)
 
     # 4c. el dictado deja de hablarle al navegador y usa el agente
     s = cortar(s, "async function procesarDictado(idTexto,idBtn,idResult){",

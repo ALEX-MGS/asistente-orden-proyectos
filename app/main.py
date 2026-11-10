@@ -36,7 +36,7 @@ async def ciclo_de_vida(_app):
         tarea.cancel()
 
 
-app = FastAPI(title="Asistente de obra · Grupo Morales", lifespan=ciclo_de_vida)
+app = FastAPI(title=f"Asistente de obra · {config.NEGOCIO}", lifespan=ciclo_de_vida)
 
 VACIO = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 
@@ -189,6 +189,7 @@ def api_estado(k: str = ""):
         # El panel lo enseña en el encabezado: así se ve de un golpe con
         # qué link estás entrando, y si repartiste el equivocado se nota.
         datos["yo"] = {"nombre": p.get("nombre") or "", "rol": p.get("rol") or ""}
+        datos["negocio"] = config.NEGOCIO
         return JSONResponse(datos)
     except Exception as e:
         log.exception("falló /api/estado")

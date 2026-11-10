@@ -1,5 +1,5 @@
 -- =====================================================================
--- Asistente de obra · Grupo Morales
+-- Asistente de obra — esquema base
 -- Esquema base (Fase 0) — Postgres / Supabase
 -- Ejecutar completo en el SQL Editor de Supabase.
 --
