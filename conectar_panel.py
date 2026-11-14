@@ -521,6 +521,21 @@ OPCIONALES: list[tuple[str, str, str]] = [
         "  const ok=descargar('grupo-morales-'+hoyStamp()+'.csv',f,'text/csv;charset=utf-8');",
         "  const ok=descargar(archivoBase()+'-'+hoyStamp()+'.csv',f,'text/csv;charset=utf-8');",
     ),
+    (
+        'subtítulo sin el oficio de un taller',
+        'Seguimiento · Carpintería y Barniz</div>',
+        'Seguimiento de proyectos</div>',
+    ),
+    (
+        'ejemplo del dictado sin obras de Grupo Morales',
+        'placeholder="Dicta una actualización... ej: El frigobar de Fátima ya entró a barniz"',
+        'placeholder="Dicta una actualización... ej: La cocina de la obra Lomas ya pasó a entrega"',
+    ),
+    (
+        'ejemplo de concepto de cotización',
+        "placeholder:'Ej: Closet recámara principal'",
+        "placeholder:'Ej: Mobiliario recámara principal'",
+    ),
 ]
 
 
