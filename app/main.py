@@ -319,6 +319,34 @@ def api_version(k: str = ""):
         return JSONResponse({"error": str(e)[:200]}, status_code=500)
 
 
+@app.get("/api/archivados")
+def api_archivados(k: str = ""):
+    """Lo que se sacó del tablero, para la pantalla de Archivados.
+
+    Sólo lee. Regresar algo usa /api/accion con archivar_*(…, false),
+    que deja su rastro en bitácora y se deshace como todo lo demás.
+    """
+    if not quien(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(api.archivados())
+    except Exception as e:
+        log.exception("falló /api/archivados")
+        return JSONResponse({"error": motivo(e)}, status_code=500)
+
+
+@app.get("/api/bitacora")
+def api_bitacora(k: str = "", antes: int | None = None, limite: int = 100):
+    """El historial de cambios, de los nuevos a los viejos."""
+    if not quien(k):
+        return JSONResponse({"error": "no autorizado"}, status_code=403)
+    try:
+        return JSONResponse(api.bitacora(limite, antes))
+    except Exception as e:
+        log.exception("falló /api/bitacora")
+        return JSONResponse({"error": motivo(e)}, status_code=500)
+
+
 @app.post("/api/etapa")
 def api_etapa(k: str = "", cuerpo: dict = Body(...)):
     """Palomear o despalomear una etapa desde el panel."""

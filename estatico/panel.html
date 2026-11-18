@@ -196,6 +196,21 @@ th .sort-arrow{font-size:9px;color:#1D9E75;margin-left:2px}
 .of-item.done .of-txt{text-decoration:line-through}
 .of-x{background:none;border:none;color:#ccc;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0}
 .of-x:hover{color:#A32D2D}
+/* Archivados y bitácora */
+.lista-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.lista-head .sec-title{margin-bottom:0}
+.arch-sec{margin-bottom:18px}
+.arch-item{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fff;border:1px solid #e5e3dd;border-radius:10px;margin-bottom:7px}
+.arch-txt{flex:1;min-width:0;font-size:13px;line-height:1.4;word-break:break-word}
+.arch-meta{font-size:11px;color:#8a8a86;margin-top:2px}
+.arch-item .mini-btn{flex-shrink:0}
+.bit-dia{font-size:11px;font-weight:600;color:#8a8a86;text-transform:uppercase;letter-spacing:.05em;margin:14px 2px 7px}
+.bit-item{display:flex;gap:10px;padding:8px 12px;background:#fff;border:1px solid #e5e3dd;border-radius:10px;margin-bottom:6px;font-size:13px;line-height:1.4}
+.bit-hora{font-size:11px;color:#a5a39d;width:58px;flex-shrink:0;padding-top:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bit-cuerpo{flex:1;min-width:0;word-break:break-word}
+.bit-origen{font-size:11px;color:#8a8a86;margin-top:2px}
+.bit-item.deshecho .bit-que{text-decoration:line-through;color:#a5a39d}
+.vacio{font-size:12px;color:#a5a39d;padding:8px 2px}
 /* Drag & drop */
 .drag-handle{cursor:grab;color:#c5c3bd;font-size:14px;padding:0 2px;user-select:none;touch-action:none}
 .drag-handle:active{cursor:grabbing}
@@ -445,6 +460,29 @@ tr.drag-over-item td{box-shadow:inset 0 2px 0 #1D9E75}
     <button class="mini-btn" data-act="add-oficina">+ Nuevo pendiente</button>
   </div>
   <div class="of-list" id="oficina-list"></div>
+</div>
+
+<!-- ARCHIVADOS -->
+<div id="v-archivo" class="hidden">
+  <div class="of-list">
+    <div class="lista-head">
+      <div class="sec-title"><span>Archivados</span></div>
+      <button class="mini-btn" data-goto="dash">← Volver al resumen</button>
+    </div>
+    <div style="font-size:12px;color:#8a8a86;margin-bottom:12px">Lo que se sacó del tablero. Nada se borró: con <b>Regresar</b> vuelve a su lugar con su avance.</div>
+    <div id="archivo-list"><div class="vacio">Cargando…</div></div>
+  </div>
+</div>
+
+<!-- BITÁCORA -->
+<div id="v-bitacora" class="hidden">
+  <div class="of-list">
+    <div class="lista-head">
+      <div class="sec-title"><span>Historial de cambios</span></div>
+      <button class="mini-btn" data-goto="dash">← Volver al resumen</button>
+    </div>
+    <div id="bitacora-list"><div class="vacio">Cargando…</div></div>
+  </div>
 </div>
 
 <script>
@@ -880,6 +918,8 @@ async function load(){
     if(o.yo&&o.yo.nombre)quienSoy=o.yo.nombre;
     ponerNombre(o.negocio);
     marcarSincronizado();
+    if(tabActiva==='archivo')cargarArchivo();
+    if(tabActiva==='bitacora')cargarBitacora(true);
   }catch(e){
     aviso('No se pudo cargar el tablero: '+e.message,false);
   }finally{
@@ -919,6 +959,147 @@ setInterval(()=>{ if(!editorCfg) load(); }, 300000);   // red de seguridad
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&!editorCfg) revisarCambios();
 });
+
+// ===== ARCHIVADOS Y BITÁCORA =====
+// Dos pantallas que sólo leen, cada una con su propia consulta al
+// servidor. Regresar algo usa las mismas acciones de archivar del
+// tablero, con archivado:false, así que queda en la bitácora y el botón
+// de Deshacer lo vuelve a sacar.
+let archivo=null;
+let bitacora={entradas:[],hayMas:false,cargando:false};
+
+const APIq=(r,extra)=>API(r)+(extra?(TOKEN?'&':'?')+extra:'');
+
+function abrirLista(cual){
+  tabActiva=cual;closeEditor();resumenTexto=null;
+  renderAll();
+  if(cual==='archivo')cargarArchivo();else cargarBitacora(true);
+}
+
+async function getJSON(url){
+  const r=await fetch(url,{cache:'no-store'});
+  const txt=await r.text();
+  let o; try{o=JSON.parse(txt)}catch(e){o={error:txt.slice(0,140)}}
+  if(!r.ok||o.error)throw new Error(o.error||('el servidor contestó '+r.status));
+  return o;
+}
+
+function fmtCuando(iso){
+  if(!iso)return'';
+  const d=new Date(iso);
+  if(isNaN(d))return'';
+  return d.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+', '+
+         d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+}
+function quienCuando(x){
+  const partes=[];
+  if(x.cuando)partes.push(fmtCuando(x.cuando));
+  if(x.quien)partes.push('por '+x.quien);
+  return partes.length?'Archivado '+partes.join(' '):'';
+}
+
+async function cargarArchivo(){
+  try{
+    archivo=await getJSON(API('archivados'));
+  }catch(e){
+    $('archivo-list').innerHTML=`<div class="vacio">No se pudo cargar: ${esc(e.message)}</div>`;
+    return;
+  }
+  renderArchivo();
+}
+
+function renderArchivo(){
+  if(!archivo)return;
+  const fila=(tipo,id,titulo,detalle,x)=>`
+    <div class="arch-item">
+      <div class="arch-txt">${titulo}
+        <div class="arch-meta">${[detalle,quienCuando(x)].filter(Boolean).map(esc).join(' · ')}</div>
+      </div>
+      <button class="mini-btn" data-act="regresar" data-tipo="${tipo}" data-id="${id}">Regresar</button>
+    </div>`;
+  const seccion=(titulo,items)=>items.length?`<div class="arch-sec">
+      <div class="sec-title"><span>${titulo}</span><small>${items.length}</small></div>
+      ${items.join('')}</div>`:'';
+
+  const a=archivo;
+  const html=
+    seccion('Proyectos y obras',a.obras.map(o=>fila('obra',o.id,`<b>${esc(o.nombre)}</b>`,
+      o.muebles?`regresa con ${o.muebles} ${o.muebles===1?'mueble':'muebles'}`:'',o)))+
+    seccion('Muebles',a.muebles.map(m=>fila('mueble',m.id,`<b>${esc(m.nombre)}</b>`,
+      [m.obra,m.grupo,m.terminado?'terminado':Math.round(m.avance*100)+'%'].filter(Boolean).join(' · '),m)))+
+    seccion('Pendientes',a.pendientes.map(t=>fila('pendiente',t.id,esc(t.texto),
+      (t.oficina?'Oficina':t.obra)+(t.hecho?' · hecho':''),t)))+
+    seccion('Cotizaciones',a.cotizaciones.map(c=>fila('cotizacion',c.id,`<b>${esc(c.cliente)}</b>`,
+      [c.concepto,c.monto!==''?fmtMonto(c.monto):''].filter(Boolean).join(' · '),c)));
+  $('archivo-list').innerHTML=html||'<div class="vacio">No hay nada archivado.</div>';
+}
+
+const REGRESAR={
+  obra:      id=>({accion:'archivar_obra',      obra_id:id,       archivado:false}),
+  mueble:    id=>({accion:'archivar_mueble',    mueble_id:id,     archivado:false}),
+  pendiente: id=>({accion:'archivar_pendiente', pendiente_id:id,  archivado:false}),
+  cotizacion:id=>({accion:'archivar_cotizacion',cotizacion_id:id, archivado:false}),
+};
+
+function regresar(btn){
+  const armar=REGRESAR[btn.dataset.tipo];
+  if(!armar)return;
+  btn.disabled=true;btn.textContent='Regresando…';
+  apiPost('accion',armar(btn.dataset.id))
+    .then(r=>{
+      const n=r&&r.r&&r.r.muebles;
+      aviso('De vuelta en el tablero'+(btn.dataset.tipo==='obra'&&n?' con '+n+(n===1?' mueble':' muebles'):'')+'.',true);
+      if(r&&r.v)versionActual=r.v;
+      load();
+    })
+    .catch(e=>{
+      aviso('No se pudo regresar: '+e.message,false);
+      btn.disabled=false;btn.textContent='Regresar';
+    });
+}
+
+async function cargarBitacora(desdeCero){
+  if(bitacora.cargando)return;
+  bitacora.cargando=true;
+  const ultimo=bitacora.entradas.length?bitacora.entradas[bitacora.entradas.length-1].id:null;
+  try{
+    const o=await getJSON(APIq('bitacora',!desdeCero&&ultimo?'antes='+ultimo:''));
+    bitacora.entradas=desdeCero?o.entradas:bitacora.entradas.concat(o.entradas);
+    bitacora.hayMas=!!o.hay_mas;
+  }catch(e){
+    if(desdeCero)$('bitacora-list').innerHTML=`<div class="vacio">No se pudo cargar: ${esc(e.message)}</div>`;
+    else aviso('No se pudo cargar más: '+e.message,false);
+    return;
+  }finally{
+    bitacora.cargando=false;
+  }
+  renderBitacora();
+}
+
+function renderBitacora(){
+  const es=bitacora.entradas;
+  if(!es.length){$('bitacora-list').innerHTML='<div class="vacio">Todavía no hay cambios.</div>';return}
+  let html='',dia='';
+  es.forEach(b=>{
+    const d=new Date(b.cuando);
+    const k=isNaN(d)?'':d.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
+    if(k!==dia){dia=k;html+=`<div class="bit-dia">${esc(k)}</div>`}
+    const hora=isNaN(d)?'':d.toLocaleTimeString('es-MX',{hour:'numeric',minute:'2-digit'});
+    const o=b.origen||{};
+    const origen=o.tipo==='panel'?'desde el panel'
+                :o.tipo==='mensaje'?'“'+o.texto+'”'
+                :'';
+    html+=`<div class="bit-item${b.deshecho?' deshecho':''}">
+      <div class="bit-hora">${esc(hora)}</div>
+      <div class="bit-cuerpo">
+        <div class="bit-que">${b.quien?`<b>${esc(b.quien)}</b> · `:''}${esc(b.que)}${b.sobre?` · ${esc(b.sobre)}`:''}</div>
+        <div class="bit-origen">${esc(origen)}${b.deshecho?(origen?' · ':'')+'deshecho':''}</div>
+      </div>
+    </div>`;
+  });
+  if(bitacora.hayMas)html+=`<div style="text-align:center;margin-top:10px"><button class="mini-btn" data-act="bit-mas">Ver cambios anteriores</button></div>`;
+  $('bitacora-list').innerHTML=html;
+}
 
 // ===== RESPALDO: exportar / importar =====
 function hoyStamp(){
@@ -1062,6 +1243,9 @@ function renderMenu(){
     <button data-act="renombrar">\u270e Editar proyecto</button>
     <button data-act="eliminar-proy" style="color:#A32D2D">\u00d7 Eliminar proyecto</button>
     <div style="height:1px;background:#f0efe9;margin:4px 6px"></div>`:''}
+    <button data-act="ver-archivo">\u21ba Archivados</button>
+    <button data-act="ver-bitacora">\u2630 Historial de cambios</button>
+    <div style="height:1px;background:#f0efe9;margin:4px 6px"></div>
     <button data-act="exportar">\u2913 Descargar respaldo (.json)</button>
     <button data-act="exportar-csv">\u2913 Descargar para Excel (.csv)</button>
   </div>`;
@@ -1626,6 +1810,8 @@ function renderAll(){
   $('v-pend').classList.toggle('hidden',tabActiva!=='pend');
   $('v-cotiz').classList.toggle('hidden',tabActiva!=='cotiz');
   $('v-oficina').classList.toggle('hidden',tabActiva!=='oficina');
+  $('v-archivo').classList.toggle('hidden',tabActiva!=='archivo');
+  $('v-bitacora').classList.toggle('hidden',tabActiva!=='bitacora');
   if(esProy)renderProyecto();
   renderResumen();
   const sinUndo=histIdx<=0, sinRedo=histIdx>=historial.length-1;
@@ -1666,7 +1852,7 @@ document.addEventListener('click',e=>{
     $('btn-mas').classList.toggle('on',abrir);
     return;
   }
-  if(['exportar','exportar-csv','importar','resumen','renombrar','eliminar-proy'].includes(act)){
+  if(['exportar','exportar-csv','importar','resumen','renombrar','eliminar-proy','ver-archivo','ver-bitacora'].includes(act)){
     $('menu-slot').classList.add('hidden');$('btn-mas').classList.remove('on');
   }
   if(act==='dict-rapido'){toggleDictadoRapido();return}
@@ -1681,6 +1867,10 @@ document.addEventListener('click',e=>{
     filtro={estado:'todos',entrega:'todas'};orden={campo:null,dir:1};agrupar=true;
     renderAll();return;
   }
+  if(act==='ver-archivo'){abrirLista('archivo');return}
+  if(act==='ver-bitacora'){abrirLista('bitacora');return}
+  if(act==='regresar'){regresar(btn);return}
+  if(act==='bit-mas'){cargarBitacora(false);return}
   if(act==='exportar'){exportarJSON();return}
   if(act==='exportar-csv'){exportarCSV();return}
   if(act==='undo'){
